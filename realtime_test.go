@@ -283,12 +283,10 @@ func TestRealtimeCloseIdempotentAndRaceSafe(t *testing.T) {
 	session, _ := newOpenedRealtimeSessionForTest(t, nil)
 
 	var wg sync.WaitGroup
-	for i := 0; i < 8; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 8 {
+		wg.Go(func() {
 			_ = session.Close()
-		}()
+		})
 	}
 
 	waitCh := make(chan struct{})
@@ -311,7 +309,7 @@ func TestRealtimeCloseIdempotentAndRaceSafe(t *testing.T) {
 func TestRealtimeOpenCloseLoopCleansReceiveLoop(t *testing.T) {
 	const loops = 20
 
-	for i := 0; i < loops; i++ {
+	for i := range loops {
 		session, _ := newOpenedRealtimeSessionForTest(t, nil)
 		if err := session.Close(); err != nil {
 			t.Fatalf("loop %d close error = %v", i, err)

@@ -120,10 +120,7 @@ func main() {
 	defer session.Close()
 
 	for offset := 0; offset < len(audio); offset += chunkSize {
-		end := offset + chunkSize
-		if end > len(audio) {
-			end = len(audio)
-		}
+		end := min(offset+chunkSize, len(audio))
 
 		chunk := audio[offset:end]
 		isLast := end == len(audio)

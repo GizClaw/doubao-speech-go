@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"iter"
+	"maps"
 	"strings"
 	"sync"
 	"time"
@@ -831,14 +832,10 @@ func buildRealtimeStartPayload(cfg RealtimeConfig) ([]byte, error) {
 	}
 
 	asr := payload["asr"].(map[string]any)
-	for k, v := range cfg.ASR.Extra {
-		asr[k] = v
-	}
+	maps.Copy(asr, cfg.ASR.Extra)
 
 	tts := payload["tts"].(map[string]any)
-	for k, v := range cfg.TTS.Extra {
-		tts[k] = v
-	}
+	maps.Copy(tts, cfg.TTS.Extra)
 
 	dialog := payload["dialog"].(map[string]any)
 	if cfg.Dialog.BotName != "" {
@@ -853,9 +850,7 @@ func buildRealtimeStartPayload(cfg RealtimeConfig) ([]byte, error) {
 	if cfg.Dialog.CharacterManifest != "" {
 		dialog["character_manifest"] = cfg.Dialog.CharacterManifest
 	}
-	for k, v := range cfg.Dialog.Extra {
-		dialog[k] = v
-	}
+	maps.Copy(dialog, cfg.Dialog.Extra)
 
 	if cfg.Prompt.System != "" || len(cfg.Prompt.Variables) > 0 {
 		payload["prompt"] = cfg.Prompt
@@ -989,9 +984,7 @@ func clonePromptConfig(prompt RealtimePromptConfig) RealtimePromptConfig {
 	out := prompt
 	if len(prompt.Variables) > 0 {
 		out.Variables = make(map[string]string, len(prompt.Variables))
-		for k, v := range prompt.Variables {
-			out.Variables[k] = v
-		}
+		maps.Copy(out.Variables, prompt.Variables)
 	}
 	return out
 }
@@ -1000,9 +993,7 @@ func cloneGenerationProps(props RealtimeGenerationProps) RealtimeGenerationProps
 	out := props
 	if len(props.Extra) > 0 {
 		out.Extra = make(map[string]any, len(props.Extra))
-		for k, v := range props.Extra {
-			out.Extra[k] = v
-		}
+		maps.Copy(out.Extra, props.Extra)
 	}
 	return out
 }

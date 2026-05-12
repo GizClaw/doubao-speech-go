@@ -39,8 +39,8 @@ type RealtimeConfig struct {
 	TTS    RealtimeTTSConfig    `json:"tts" yaml:"tts"`
 	Dialog RealtimeDialogConfig `json:"dialog" yaml:"dialog"`
 
-	Prompt  RealtimePromptConfig          `json:"prompt,omitempty" yaml:"prompt,omitempty"`
-	Props   RealtimeGenerationProps       `json:"props,omitempty" yaml:"props,omitempty"`
+	Prompt  RealtimePromptConfig          `json:"prompt" yaml:"prompt,omitempty"`
+	Props   RealtimeGenerationProps       `json:"props" yaml:"props,omitempty"`
 	History []RealtimeConversationMessage `json:"history,omitempty" yaml:"history,omitempty"`
 
 	ResourceID string `json:"resource_id,omitempty" yaml:"resource_id,omitempty"`
