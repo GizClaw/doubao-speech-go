@@ -102,7 +102,7 @@ func TestRealtimeRecvFinalThenErrorOrder(t *testing.T) {
 	defer session.Close()
 
 	conn.enqueue(websocket.BinaryMessage, mustBuildRealtimeServerEventFrame(t, int32(EventChatEnded), session.SessionID(), "", []byte(`{"content":"done"}`)))
-	conn.enqueue(websocket.BinaryMessage, mustBuildRealtimeServerErrorFrame(t, int32(EventSessionFailed), session.SessionID(), 3005, []byte(`{"code":3005,"message":"boom","reqid":"req-1"}`)))
+	conn.enqueue(websocket.BinaryMessage, mustBuildRealtimeServerErrorFrame(t, int32(EventSessionFailed), session.SessionID(), 3005, []byte(`{"code":3005,"message":"boom","reqid":"req-1","trace_id":"trace-1","log_id":"log-1"}`)))
 
 	seenFinal := false
 	for evt, err := range session.Recv() {
@@ -112,6 +112,19 @@ func TestRealtimeRecvFinalThenErrorOrder(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), "realtime event") {
 				t.Fatalf("error = %v, want wrapped realtime event error", err)
+			}
+			apiErr, ok := AsError(err)
+			if !ok {
+				t.Fatalf("want *Error, got %T (%v)", err, err)
+			}
+			if apiErr.TraceID != "trace-1" {
+				t.Fatalf("trace_id = %q, want %q", apiErr.TraceID, "trace-1")
+			}
+			if apiErr.LogID != "log-1" {
+				t.Fatalf("log_id = %q, want %q", apiErr.LogID, "log-1")
+			}
+			if apiErr.ConnectID != session.conn.connectID {
+				t.Fatalf("connect_id = %q, want %q", apiErr.ConnectID, session.conn.connectID)
 			}
 			return
 		}

@@ -45,6 +45,7 @@ func TestTTSV2HTTPStreamChunkSequenceAndFinalFrame(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Tt-Logid", "log-stream-1")
 		flusher, ok := w.(http.Flusher)
 		if !ok {
 			http.Error(w, "flush is not supported", http.StatusInternalServerError)
@@ -53,7 +54,7 @@ func TestTTSV2HTTPStreamChunkSequenceAndFinalFrame(t *testing.T) {
 
 		_, _ = fmt.Fprintf(
 			w,
-			`{"reqid":"req-stream-1","code":0,"message":"","data":"%s"}`+"\n",
+			`{"reqid":"req-stream-1","trace_id":"trace-stream-1","code":0,"message":"","data":"%s"}`+"\n",
 			base64.StdEncoding.EncodeToString(firstAudio),
 		)
 		flusher.Flush()
@@ -103,6 +104,15 @@ func TestTTSV2HTTPStreamChunkSequenceAndFinalFrame(t *testing.T) {
 
 	if chunks[0].IsLast {
 		t.Fatalf("first chunk should not be final")
+	}
+	if chunks[0].ReqID != "req-stream-1" {
+		t.Fatalf("first chunk reqid = %q, want %q", chunks[0].ReqID, "req-stream-1")
+	}
+	if chunks[0].TraceID != "trace-stream-1" {
+		t.Fatalf("first chunk trace_id = %q, want %q", chunks[0].TraceID, "trace-stream-1")
+	}
+	if chunks[0].LogID != "log-stream-1" {
+		t.Fatalf("first chunk log_id = %q, want %q", chunks[0].LogID, "log-stream-1")
 	}
 	if chunks[1].IsLast {
 		t.Fatalf("second chunk should not be final")

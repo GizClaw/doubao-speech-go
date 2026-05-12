@@ -121,7 +121,7 @@ func (s *TTSServiceV2) OpenStreamSession(ctx context.Context, cfg *TTSV2WSConfig
 
 	conn, resp, err := s.dialer.DialContext(ctx, endpoint, headers)
 	if err != nil {
-		return nil, wsConnectError(err, resp)
+		return nil, wsConnectError(err, resp, responseMetadata{ReqID: connectID, ConnectID: connectID})
 	}
 
 	session := &TTSV2WSSession{
@@ -412,7 +412,7 @@ func (s *TTSV2WSSession) receiveLoop() {
 
 		switch msgType {
 		case websocket.TextMessage:
-			s.pushErr(parseWSErrorPayload(payload, 0))
+			s.pushErr(withErrorMetadata(parseWSErrorPayload(payload, 0), responseMetadata{ReqID: s.reqID, ConnectID: s.reqID}))
 			return
 		case websocket.BinaryMessage:
 			frame, err := parseTTSV2WSFrame(payload)
@@ -422,7 +422,7 @@ func (s *TTSV2WSSession) receiveLoop() {
 			}
 
 			if frame.messageType == ttsV2WSMsgTypeError {
-				s.pushErr(parseWSErrorPayload(frame.payload, frame.errorCode))
+				s.pushErr(withErrorMetadata(parseWSErrorPayload(frame.payload, frame.errorCode), responseMetadata{ReqID: s.reqID, ConnectID: s.reqID}))
 				return
 			}
 
@@ -468,33 +468,35 @@ func (s *TTSV2WSSession) receiveLoop() {
 					return
 				}
 			case ttsV2EventSessionFinished:
-				if err := validateTTSV2SessionFinished(frame.payload); err != nil {
+				if err := withErrorMetadata(validateTTSV2SessionFinished(frame.payload), responseMetadata{ReqID: s.reqID, ConnectID: s.reqID}); err != nil {
 					s.pushErr(err)
 					return
 				}
 				s.setSessionActive(false)
+				meta := decodeTTSV2EventMetadata(frame.payload, responseMetadata{ReqID: s.reqID, ConnectID: s.reqID})
 				select {
-				case s.chunkCh <- &TTSV2WSChunk{IsFinal: true, Event: frame.event, ReqID: s.reqID}:
+				case s.chunkCh <- &TTSV2WSChunk{IsFinal: true, Event: frame.event, ReqID: meta.ReqID, TraceID: meta.TraceID, LogID: meta.LogID, ConnectID: meta.ConnectID}:
 				case <-s.closed:
 				}
 				continue
 			case ttsV2EventSessionCanceled:
-				if err := validateTTSV2SessionFinished(frame.payload); err != nil {
+				if err := withErrorMetadata(validateTTSV2SessionFinished(frame.payload), responseMetadata{ReqID: s.reqID, ConnectID: s.reqID}); err != nil {
 					s.pushErr(err)
 					return
 				}
 				s.setSessionActive(false)
+				meta := decodeTTSV2EventMetadata(frame.payload, responseMetadata{ReqID: s.reqID, ConnectID: s.reqID})
 				select {
-				case s.chunkCh <- &TTSV2WSChunk{IsFinal: true, Event: frame.event, ReqID: s.reqID}:
+				case s.chunkCh <- &TTSV2WSChunk{IsFinal: true, Event: frame.event, ReqID: meta.ReqID, TraceID: meta.TraceID, LogID: meta.LogID, ConnectID: meta.ConnectID}:
 				case <-s.closed:
 				}
 				continue
 			case ttsV2EventSessionFailed:
 				s.setSessionActive(false)
-				s.pushErr(parseWSErrorPayload(frame.payload, 0))
+				s.pushErr(withErrorMetadata(parseWSErrorPayload(frame.payload, 0), responseMetadata{ReqID: s.reqID, ConnectID: s.reqID}))
 				return
 			case ttsV2EventConnectionFailed:
-				s.pushErr(parseWSErrorPayload(frame.payload, 0))
+				s.pushErr(withErrorMetadata(parseWSErrorPayload(frame.payload, 0), responseMetadata{ReqID: s.reqID, ConnectID: s.reqID}))
 				return
 			case ttsV2EventSentenceStart, ttsV2EventSentenceEnd, ttsV2EventConnectionFinished:
 				// Ignore sentence boundary / connection-finished events.
@@ -746,9 +748,10 @@ func decodeTTSV2Chunk(frame *ttsV2WSParsedFrame, reqID string) (*TTSV2WSChunk, e
 			return nil, nil
 		}
 		return &TTSV2WSChunk{
-			Audio: frame.payload,
-			Event: frame.event,
-			ReqID: reqID,
+			Audio:     frame.payload,
+			Event:     frame.event,
+			ReqID:     reqID,
+			ConnectID: reqID,
 		}, nil
 	}
 
@@ -757,8 +760,12 @@ func decodeTTSV2Chunk(frame *ttsV2WSParsedFrame, reqID string) (*TTSV2WSChunk, e
 	}
 
 	var payload struct {
-		Data  string `json:"data"`
-		ReqID string `json:"reqid"`
+		Data      string `json:"data"`
+		ReqID     string `json:"reqid"`
+		TraceID   string `json:"trace_id"`
+		LogID     string `json:"log_id"`
+		LogIDAlt  string `json:"logid"`
+		ConnectID string `json:"connect_id"`
 	}
 	if err := json.Unmarshal(frame.payload, &payload); err != nil {
 		return nil, wrapError(err, "unmarshal tts response payload")
@@ -772,16 +779,46 @@ func decodeTTSV2Chunk(frame *ttsV2WSParsedFrame, reqID string) (*TTSV2WSChunk, e
 		return nil, wrapError(err, "decode base64 audio")
 	}
 
-	chunkReqID := reqID
-	if payload.ReqID != "" {
-		chunkReqID = payload.ReqID
-	}
+	meta := responseMetadata{
+		ReqID:     payload.ReqID,
+		TraceID:   payload.TraceID,
+		LogID:     firstNonEmpty(payload.LogID, payload.LogIDAlt),
+		ConnectID: payload.ConnectID,
+	}.withFallback(responseMetadata{ReqID: reqID, ConnectID: reqID})
 
 	return &TTSV2WSChunk{
-		Audio: audio,
-		Event: frame.event,
-		ReqID: chunkReqID,
+		Audio:     audio,
+		Event:     frame.event,
+		ReqID:     meta.ReqID,
+		TraceID:   meta.TraceID,
+		LogID:     meta.LogID,
+		ConnectID: meta.ConnectID,
 	}, nil
+}
+
+func decodeTTSV2EventMetadata(payload []byte, fallback responseMetadata) responseMetadata {
+	if len(payload) == 0 {
+		return fallback
+	}
+
+	var p struct {
+		ReqID     string `json:"reqid"`
+		RequestID string `json:"request_id"`
+		TraceID   string `json:"trace_id"`
+		LogID     string `json:"log_id"`
+		LogIDAlt  string `json:"logid"`
+		ConnectID string `json:"connect_id"`
+	}
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return fallback
+	}
+
+	return responseMetadata{
+		ReqID:     firstNonEmpty(p.ReqID, p.RequestID),
+		TraceID:   p.TraceID,
+		LogID:     firstNonEmpty(p.LogID, p.LogIDAlt),
+		ConnectID: p.ConnectID,
+	}.withFallback(fallback)
 }
 
 func validateTTSV2SessionFinished(payload []byte) error {
@@ -795,6 +832,11 @@ func validateTTSV2SessionFinished(payload []byte) error {
 		Message    string `json:"message"`
 		Error      string `json:"error"`
 		ReqID      string `json:"reqid"`
+		RequestID  string `json:"request_id"`
+		TraceID    string `json:"trace_id"`
+		LogID      string `json:"log_id"`
+		LogIDAlt   string `json:"logid"`
+		ConnectID  string `json:"connect_id"`
 	}
 	if err := json.Unmarshal(payload, &p); err != nil {
 		return nil
@@ -816,10 +858,14 @@ func validateTTSV2SessionFinished(payload []byte) error {
 		msg = "session finished with non-success status"
 	}
 
-	if p.ReqID != "" {
-		return &Error{Code: status, Message: msg, ReqID: p.ReqID}
+	return &Error{
+		Code:      status,
+		Message:   msg,
+		ReqID:     firstNonEmpty(p.ReqID, p.RequestID),
+		TraceID:   p.TraceID,
+		LogID:     firstNonEmpty(p.LogID, p.LogIDAlt),
+		ConnectID: p.ConnectID,
 	}
-	return &Error{Code: status, Message: msg}
 }
 
 func normalizeTTSV2WSConfig(cfg TTSV2WSConfig) (TTSV2WSConfig, error) {

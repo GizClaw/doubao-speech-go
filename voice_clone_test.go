@@ -49,12 +49,15 @@ func TestVoiceCloneUploadSubmitFailure(t *testing.T) {
 			http.NotFound(w, r)
 			return
 		}
+		w.Header().Set("X-Tt-Logid", "log-upload-failed")
 		_, _ = io.Copy(io.Discard, r.Body)
 		_ = json.NewEncoder(w).Encode(map[string]any{
 			"BaseResp": map[string]any{
 				"StatusCode":    1101,
 				"StatusMessage": "audio upload failed",
 			},
+			"reqid":    "req-upload-failed",
+			"trace_id": "trace-upload-failed",
 		})
 	}))
 	defer server.Close()
@@ -82,6 +85,15 @@ func TestVoiceCloneUploadSubmitFailure(t *testing.T) {
 	}
 	if !strings.Contains(apiErr.Message, "audio upload failed") {
 		t.Fatalf("error message = %q, want contains %q", apiErr.Message, "audio upload failed")
+	}
+	if apiErr.ReqID != "req-upload-failed" {
+		t.Fatalf("reqid = %q, want %q", apiErr.ReqID, "req-upload-failed")
+	}
+	if apiErr.TraceID != "trace-upload-failed" {
+		t.Fatalf("trace_id = %q, want %q", apiErr.TraceID, "trace-upload-failed")
+	}
+	if apiErr.LogID != "log-upload-failed" {
+		t.Fatalf("log_id = %q, want %q", apiErr.LogID, "log-upload-failed")
 	}
 }
 
@@ -141,6 +153,7 @@ func TestVoiceCloneUploadAndWaitSuccess(t *testing.T) {
 			})
 
 		case voiceCloneStatusPath:
+			w.Header().Set("X-Tt-Logid", "log-status-1")
 			var body map[string]any
 			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 				t.Fatalf("decode status request error = %v", err)
@@ -166,6 +179,8 @@ func TestVoiceCloneUploadAndWaitSuccess(t *testing.T) {
 				"version":        "V1",
 				"demo_audio":     "https://example.com/demo.wav",
 				"status_message": "ok",
+				"reqid":          "req-status-1",
+				"trace_id":       "trace-status-1",
 			})
 
 		default:
@@ -204,6 +219,15 @@ func TestVoiceCloneUploadAndWaitSuccess(t *testing.T) {
 	}
 	if status.DemoAudio != "https://example.com/demo.wav" {
 		t.Fatalf("demo_audio = %q, want %q", status.DemoAudio, "https://example.com/demo.wav")
+	}
+	if status.ReqID != "req-status-1" {
+		t.Fatalf("status reqid = %q, want %q", status.ReqID, "req-status-1")
+	}
+	if status.TraceID != "trace-status-1" {
+		t.Fatalf("status trace_id = %q, want %q", status.TraceID, "trace-status-1")
+	}
+	if status.LogID != "log-status-1" {
+		t.Fatalf("status log_id = %q, want %q", status.LogID, "log-status-1")
 	}
 	if atomic.LoadInt32(&statusCalls) < 2 {
 		t.Fatalf("status poll calls = %d, want >= 2", atomic.LoadInt32(&statusCalls))

@@ -115,6 +115,9 @@ func (c *Client) doRequest(req *http.Request, out any) error {
 	if err := json.Unmarshal(respBody, out); err != nil {
 		return wrapError(err, "unmarshal response")
 	}
+	if setter, ok := out.(responseMetadataSetter); ok {
+		setter.setResponseMetadata(responseMetadata{LogID: logID})
+	}
 
 	return nil
 }

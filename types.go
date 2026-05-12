@@ -72,6 +72,9 @@ type ASRV2Result struct {
 	IsFinal    bool             `json:"is_final"`
 	Duration   int              `json:"duration,omitempty"`
 	ReqID      string           `json:"reqid,omitempty"`
+	TraceID    string           `json:"trace_id,omitempty"`
+	LogID      string           `json:"log_id,omitempty"`
+	ConnectID  string           `json:"connect_id,omitempty"`
 }
 
 // ASRV2Utterance contains utterance-level info.
@@ -111,8 +114,11 @@ type TTSV2WSConfig struct {
 
 // TTSV2WSChunk is one downstream chunk from TTS V2 WebSocket stream.
 type TTSV2WSChunk struct {
-	Audio   []byte `json:"-"`
-	IsFinal bool   `json:"is_final"`
-	Event   int32  `json:"event"`
-	ReqID   string `json:"reqid,omitempty"`
+	Audio     []byte `json:"-"`
+	IsFinal   bool   `json:"is_final"`
+	Event     int32  `json:"event"`
+	ReqID     string `json:"reqid,omitempty"`
+	TraceID   string `json:"trace_id,omitempty"`
+	LogID     string `json:"log_id,omitempty"`
+	ConnectID string `json:"connect_id,omitempty"`
 }

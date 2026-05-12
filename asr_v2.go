@@ -67,7 +67,7 @@ func (s *ASRServiceV2) OpenStreamSession(ctx context.Context, cfg *ASRV2Config) 
 
 	conn, resp, err := s.dialer.DialContext(ctx, endpoint, headers)
 	if err != nil {
-		return nil, wsConnectError(err, resp)
+		return nil, wsConnectError(err, resp, responseMetadata{ReqID: connectID, ConnectID: connectID})
 	}
 
 	session := &ASRV2Session{
@@ -266,7 +266,7 @@ func (s *ASRV2Session) receiveLoop() {
 
 		switch msgType {
 		case websocket.TextMessage:
-			s.pushErr(parseWSErrorPayload(payload, 0))
+			s.pushErr(withErrorMetadata(parseWSErrorPayload(payload, 0), responseMetadata{ReqID: s.reqID, ConnectID: s.reqID}))
 			return
 		case websocket.BinaryMessage:
 			frame, err := protocol.ParseServerFrame(payload)
@@ -291,7 +291,7 @@ func (s *ASRV2Session) receiveLoop() {
 					return
 				}
 			case protocol.MessageTypeError:
-				s.pushErr(parseWSErrorPayload(frame.Payload, frame.ErrorCode))
+				s.pushErr(withErrorMetadata(parseWSErrorPayload(frame.Payload, frame.ErrorCode), responseMetadata{ReqID: s.reqID, ConnectID: s.reqID}))
 				return
 			default:
 				// Ignore other frame types in this migration scope.
@@ -305,6 +305,10 @@ func (s *ASRV2Session) receiveLoop() {
 func decodeASRV2Result(frame *protocol.ParsedFrame, fallbackReqID string) (*ASRV2Result, error) {
 	var payload struct {
 		ReqID     string `json:"reqid"`
+		TraceID   string `json:"trace_id"`
+		LogID     string `json:"log_id"`
+		LogIDAlt  string `json:"logid"`
+		ConnectID string `json:"connect_id"`
 		Code      int    `json:"code"`
 		Message   string `json:"message"`
 		AudioInfo struct {
@@ -334,7 +338,14 @@ func decodeASRV2Result(frame *protocol.ParsedFrame, fallbackReqID string) (*ASRV
 	}
 
 	if payload.Code != 0 && payload.Code != CodeSuccess && payload.Code != CodeASRSuccess {
-		return nil, &Error{Code: payload.Code, Message: payload.Message, ReqID: payload.ReqID}
+		return nil, &Error{
+			Code:      payload.Code,
+			Message:   payload.Message,
+			ReqID:     payload.ReqID,
+			TraceID:   payload.TraceID,
+			LogID:     firstNonEmpty(payload.LogID, payload.LogIDAlt),
+			ConnectID: payload.ConnectID,
+		}
 	}
 
 	if payload.Result.Text == "" && len(payload.Result.Utterances) == 0 {
@@ -381,6 +392,9 @@ func decodeASRV2Result(frame *protocol.ParsedFrame, fallbackReqID string) (*ASRV
 		Duration:   payload.AudioInfo.Duration,
 		IsFinal:    isFinal,
 		ReqID:      reqID,
+		TraceID:    payload.TraceID,
+		LogID:      firstNonEmpty(payload.LogID, payload.LogIDAlt),
+		ConnectID:  firstNonEmpty(payload.ConnectID, fallbackReqID),
 	}, nil
 }
 
@@ -390,6 +404,11 @@ func parseWSErrorPayload(payload []byte, fallbackCode uint32) error {
 		StatusCode int    `json:"status_code"`
 		Message    string `json:"message"`
 		ReqID      string `json:"reqid"`
+		RequestID  string `json:"request_id"`
+		TraceID    string `json:"trace_id"`
+		LogID      string `json:"log_id"`
+		LogIDAlt   string `json:"logid"`
+		ConnectID  string `json:"connect_id"`
 		Error      string `json:"error"`
 	}
 	if err := json.Unmarshal(payload, &e); err != nil {
@@ -423,7 +442,14 @@ func parseWSErrorPayload(payload []byte, fallbackCode uint32) error {
 		code = CodeServerError
 	}
 
-	return &Error{Code: code, Message: msg, ReqID: e.ReqID}
+	return &Error{
+		Code:      code,
+		Message:   msg,
+		ReqID:     firstNonEmpty(e.ReqID, e.RequestID),
+		TraceID:   e.TraceID,
+		LogID:     firstNonEmpty(e.LogID, e.LogIDAlt),
+		ConnectID: e.ConnectID,
+	}
 }
 
 func normalizeASRV2Config(cfg ASRV2Config) (ASRV2Config, error) {
@@ -518,7 +544,7 @@ func (s *ASRV2Session) pushErr(err error) {
 	}
 }
 
-func wsConnectError(baseErr error, resp *http.Response) error {
+func wsConnectError(baseErr error, resp *http.Response, metas ...responseMetadata) error {
 	if resp == nil || resp.Body == nil {
 		return wrapError(baseErr, "websocket connect failed")
 	}
@@ -532,6 +558,9 @@ func wsConnectError(baseErr error, resp *http.Response) error {
 
 	if readErr == nil && len(body) > 0 {
 		if parsed := parseAPIError(resp.StatusCode, body, logID); parsed != nil {
+			if len(metas) > 0 {
+				parsed = withErrorMetadata(parsed, metas[0])
+			}
 			return wrapError(parsed, "websocket connect failed")
 		}
 		return fmt.Errorf("websocket connect failed: %w (status=%s, body=%s)", baseErr, resp.Status, string(body))

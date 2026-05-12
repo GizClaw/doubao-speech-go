@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"strings"
 	"testing"
@@ -105,7 +106,7 @@ func TestTTSV2WSSessionRecvErrorFrame(t *testing.T) {
 	}
 	defer session.Close()
 
-	conn.enqueue(websocket.BinaryMessage, buildTTSV2ErrorFrame(3002, []byte(`{"code":3002,"message":"auth failed","reqid":"r2"}`)))
+	conn.enqueue(websocket.BinaryMessage, buildTTSV2ErrorFrame(3002, []byte(`{"code":3002,"message":"auth failed"}`)))
 
 	var gotErr error
 	for _, recvErr := range session.Recv() {
@@ -122,6 +123,12 @@ func TestTTSV2WSSessionRecvErrorFrame(t *testing.T) {
 	}
 	if apiErr.Code != 3002 {
 		t.Fatalf("error code = %d, want 3002", apiErr.Code)
+	}
+	if apiErr.ReqID != session.reqID {
+		t.Fatalf("fallback reqid = %q, want %q", apiErr.ReqID, session.reqID)
+	}
+	if apiErr.ConnectID != session.reqID {
+		t.Fatalf("connect_id = %q, want %q", apiErr.ConnectID, session.reqID)
 	}
 }
 
@@ -165,6 +172,35 @@ func TestTTSV2WSSessionFailedEventUsesStatusCode(t *testing.T) {
 	}
 	if apiErr.ReqID != "s-failed" {
 		t.Fatalf("reqid = %q, want %q", apiErr.ReqID, "s-failed")
+	}
+}
+
+func TestDecodeTTSV2WSChunkReturnsDiagnosticIDs(t *testing.T) {
+	audioPayload := base64.StdEncoding.EncodeToString([]byte("audio"))
+	frame := &ttsV2WSParsedFrame{
+		serialization: ttsV2WSSerializationJSON,
+		event:         ttsV2EventResponse,
+		payload:       []byte(`{"data":"` + audioPayload + `","reqid":"req-chunk","trace_id":"trace-chunk","log_id":"log-chunk"}`),
+	}
+
+	chunk, err := decodeTTSV2Chunk(frame, "connect-1")
+	if err != nil {
+		t.Fatalf("decodeTTSV2Chunk error = %v", err)
+	}
+	if chunk == nil {
+		t.Fatalf("chunk is nil")
+	}
+	if chunk.ReqID != "req-chunk" {
+		t.Fatalf("reqid = %q, want %q", chunk.ReqID, "req-chunk")
+	}
+	if chunk.TraceID != "trace-chunk" {
+		t.Fatalf("trace_id = %q, want %q", chunk.TraceID, "trace-chunk")
+	}
+	if chunk.LogID != "log-chunk" {
+		t.Fatalf("log_id = %q, want %q", chunk.LogID, "log-chunk")
+	}
+	if chunk.ConnectID != "connect-1" {
+		t.Fatalf("connect_id = %q, want %q", chunk.ConnectID, "connect-1")
 	}
 }
 

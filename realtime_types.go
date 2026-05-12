@@ -118,6 +118,7 @@ type RealtimeEvent struct {
 
 	ReqID   string `json:"reqid,omitempty"`
 	TraceID string `json:"trace_id,omitempty"`
+	LogID   string `json:"log_id,omitempty"`
 }
 
 // DefaultRealtimeConfig returns a baseline realtime config.

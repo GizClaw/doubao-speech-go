@@ -177,6 +177,12 @@ func TestOpenStreamSessionAuthFailureErrorStructure(t *testing.T) {
 	if apiErr.ReqID != "req-auth-1" {
 		t.Fatalf("reqid = %q, want %q", apiErr.ReqID, "req-auth-1")
 	}
+	if apiErr.LogID != "log-auth-1" {
+		t.Fatalf("log_id = %q, want %q", apiErr.LogID, "log-auth-1")
+	}
+	if apiErr.ConnectID != dialer.headers.Get("X-Api-Connect-Id") {
+		t.Fatalf("connect_id = %q, want %q", apiErr.ConnectID, dialer.headers.Get("X-Api-Connect-Id"))
+	}
 	if apiErr.HTTPStatus != http.StatusUnauthorized {
 		t.Fatalf("http status = %d, want %d", apiErr.HTTPStatus, http.StatusUnauthorized)
 	}
@@ -217,7 +223,7 @@ func TestRecvResultAndError(t *testing.T) {
 	}
 	defer session.Close()
 
-	resultPayload := []byte(`{"reqid":"r1","audio_info":{"duration":1200},"result":{"text":"hello","utterances":[{"text":"hello","start_time":0,"end_time":1000,"definite":true}]}}`)
+	resultPayload := []byte(`{"reqid":"r1","trace_id":"trace-r1","audio_info":{"duration":1200},"result":{"text":"hello","utterances":[{"text":"hello","start_time":0,"end_time":1000,"definite":true}]}}`)
 	conn.enqueue(websocket.BinaryMessage, buildServerFrame(protocol.MessageTypeFullServer, protocol.FlagNegativeWithSeq, resultPayload))
 
 	var gotResult *ASRV2Result
@@ -235,8 +241,14 @@ func TestRecvResultAndError(t *testing.T) {
 	if gotResult.Text != "hello" || !gotResult.IsFinal {
 		t.Fatalf("unexpected result: %+v", gotResult)
 	}
+	if gotResult.TraceID != "trace-r1" {
+		t.Fatalf("trace_id = %q, want %q", gotResult.TraceID, "trace-r1")
+	}
+	if gotResult.ConnectID != session.reqID {
+		t.Fatalf("connect_id = %q, want %q", gotResult.ConnectID, session.reqID)
+	}
 
-	errPayload := []byte(`{"code":3002,"message":"auth failed","reqid":"r2"}`)
+	errPayload := []byte(`{"code":3002,"message":"auth failed"}`)
 	conn.enqueue(websocket.BinaryMessage, buildServerErrorFrame(3002, errPayload))
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -252,6 +264,12 @@ func TestRecvResultAndError(t *testing.T) {
 	}
 	if apiErr.Code != 3002 {
 		t.Fatalf("error code = %d, want 3002", apiErr.Code)
+	}
+	if apiErr.ReqID != session.reqID {
+		t.Fatalf("fallback reqid = %q, want %q", apiErr.ReqID, session.reqID)
+	}
+	if apiErr.ConnectID != session.reqID {
+		t.Fatalf("connect_id = %q, want %q", apiErr.ConnectID, session.reqID)
 	}
 }
 
@@ -282,13 +300,17 @@ func TestParseWSErrorPayloadCodeAndStatusCodePriority(t *testing.T) {
 		fallbackCode uint32
 		wantCode     int
 		wantReqID    string
+		wantTraceID  string
+		wantLogID    string
 	}{
 		{
 			name:         "prefer code over status_code",
-			payload:      `{"code":3002,"status_code":55000000,"message":"auth failed","reqid":"r-code"}`,
+			payload:      `{"code":3002,"status_code":55000000,"message":"auth failed","reqid":"r-code","trace_id":"trace-code","log_id":"log-code"}`,
 			fallbackCode: 0,
 			wantCode:     3002,
 			wantReqID:    "r-code",
+			wantTraceID:  "trace-code",
+			wantLogID:    "log-code",
 		},
 		{
 			name:         "use status_code when code missing",
@@ -318,6 +340,12 @@ func TestParseWSErrorPayloadCodeAndStatusCodePriority(t *testing.T) {
 			}
 			if apiErr.ReqID != tc.wantReqID {
 				t.Fatalf("reqid = %q, want %q", apiErr.ReqID, tc.wantReqID)
+			}
+			if apiErr.TraceID != tc.wantTraceID {
+				t.Fatalf("trace_id = %q, want %q", apiErr.TraceID, tc.wantTraceID)
+			}
+			if apiErr.LogID != tc.wantLogID {
+				t.Fatalf("log_id = %q, want %q", apiErr.LogID, tc.wantLogID)
 			}
 		})
 	}

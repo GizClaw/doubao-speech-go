@@ -13,18 +13,20 @@ type Error struct {
 	Message    string `json:"message"`
 	TraceID    string `json:"trace_id,omitempty"`
 	LogID      string `json:"log_id,omitempty"`
+	ConnectID  string `json:"connect_id,omitempty"`
 	HTTPStatus int    `json:"-"`
 	ReqID      string `json:"reqid,omitempty"`
 }
 
 func (e *Error) Error() string {
 	return fmt.Sprintf(
-		"doubaospeech: %s (code=%d, reqid=%s, trace_id=%s, log_id=%s, http_status=%d)",
+		"doubaospeech: %s (code=%d, reqid=%s, trace_id=%s, log_id=%s, connect_id=%s, http_status=%d)",
 		e.Message,
 		e.Code,
 		e.ReqID,
 		e.TraceID,
 		e.LogID,
+		e.ConnectID,
 		e.HTTPStatus,
 	)
 }
@@ -73,11 +75,15 @@ const (
 )
 
 type apiErrorPayload struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-	Error   string `json:"error"`
-	ReqID   string `json:"reqid"`
-	TraceID string `json:"trace_id"`
+	Code      int    `json:"code"`
+	Message   string `json:"message"`
+	Error     string `json:"error"`
+	ReqID     string `json:"reqid"`
+	RequestID string `json:"request_id"`
+	TraceID   string `json:"trace_id"`
+	LogID     string `json:"log_id"`
+	LogIDAlt  string `json:"logid"`
+	ConnectID string `json:"connect_id"`
 }
 
 type apiErrorEnvelope struct {
@@ -128,9 +134,10 @@ func parseAPIError(statusCode int, body []byte, logID string) error {
 		Code:       code,
 		Message:    msg,
 		TraceID:    payload.TraceID,
-		LogID:      logID,
+		LogID:      firstNonEmpty(logID, payload.LogID, payload.LogIDAlt),
+		ConnectID:  payload.ConnectID,
 		HTTPStatus: statusCode,
-		ReqID:      payload.ReqID,
+		ReqID:      firstNonEmpty(payload.ReqID, payload.RequestID),
 	}
 }
 

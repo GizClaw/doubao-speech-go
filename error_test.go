@@ -6,7 +6,7 @@ import (
 )
 
 func TestParseAPIErrorNestedHeaderPayload(t *testing.T) {
-	err := parseAPIError(http.StatusUnauthorized, []byte(`{"header":{"reqid":"req-nested-1","code":45000010,"message":"Invalid X-Api-Key"}}`), "log-nested-1")
+	err := parseAPIError(http.StatusUnauthorized, []byte(`{"header":{"reqid":"req-nested-1","trace_id":"trace-nested-1","code":45000010,"message":"Invalid X-Api-Key"}}`), "log-nested-1")
 	if err == nil {
 		t.Fatalf("parseAPIError returned nil")
 	}
@@ -24,6 +24,9 @@ func TestParseAPIErrorNestedHeaderPayload(t *testing.T) {
 	}
 	if apiErr.ReqID != "req-nested-1" {
 		t.Fatalf("reqid = %q, want %q", apiErr.ReqID, "req-nested-1")
+	}
+	if apiErr.TraceID != "trace-nested-1" {
+		t.Fatalf("trace_id = %q, want %q", apiErr.TraceID, "trace-nested-1")
 	}
 	if apiErr.LogID != "log-nested-1" {
 		t.Fatalf("logid = %q, want %q", apiErr.LogID, "log-nested-1")

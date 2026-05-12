@@ -67,6 +67,10 @@ type VoiceCloneStatus struct {
 	Version    string `json:"version,omitempty"`
 	DemoAudio  string `json:"demo_audio,omitempty"`
 	CreateTime int64  `json:"create_time,omitempty"`
+
+	ReqID   string `json:"reqid,omitempty"`
+	TraceID string `json:"trace_id,omitempty"`
+	LogID   string `json:"log_id,omitempty"`
 }
 
 // Submit uploads training audio and returns a task handle for polling.
@@ -138,7 +142,7 @@ func (s *VoiceCloneService) Upload(ctx context.Context, req *VoiceCloneRequest) 
 				if code == 0 {
 					code = CodeServerError
 				}
-				return &Error{Code: code, Message: msg}
+				return &Error{Code: code, Message: msg, ReqID: result.ReqID, TraceID: result.TraceID, LogID: result.LogID}
 			}
 		}
 		if status == TaskStatusCancelled {
@@ -182,6 +186,7 @@ func (s *VoiceCloneService) getStatusBySpeakerID(ctx context.Context, speakerID 
 	}
 
 	status, rawStatus, rawStatusCode := resp.resolveTaskStatus()
+	meta := resp.responseMetadata()
 	result := &VoiceCloneStatus{
 		TaskID:        strings.TrimSpace(resp.TaskID),
 		SpeakerID:     firstNonEmpty(strings.TrimSpace(resp.SpeakerID), speakerID),
@@ -194,6 +199,9 @@ func (s *VoiceCloneService) getStatusBySpeakerID(ctx context.Context, speakerID 
 		Version:       strings.TrimSpace(resp.Version),
 		DemoAudio:     strings.TrimSpace(resp.DemoAudio),
 		CreateTime:    resp.CreateTime,
+		ReqID:         meta.ReqID,
+		TraceID:       meta.TraceID,
+		LogID:         meta.LogID,
 	}
 
 	return result, nil
@@ -366,12 +374,47 @@ func normalizeVoiceCloneAudioFormat(explicit string, fileName string) string {
 }
 
 type voiceCloneBaseResponse struct {
-	BaseResp voiceCloneBaseResp `json:"BaseResp"`
+	BaseResp  voiceCloneBaseResp `json:"BaseResp"`
+	ReqID     string             `json:"reqid"`
+	RequestID string             `json:"request_id"`
+	TraceID   string             `json:"trace_id"`
+	LogID     string             `json:"log_id"`
+	LogIDAlt  string             `json:"logid"`
 }
 
 type voiceCloneBaseResp struct {
 	StatusCode    int    `json:"StatusCode"`
 	StatusMessage string `json:"StatusMessage"`
+	ReqID         string `json:"ReqID"`
+	RequestID     string `json:"RequestId"`
+	TraceID       string `json:"TraceID"`
+	LogID         string `json:"LogID"`
+}
+
+func (r *voiceCloneBaseResponse) setResponseMetadata(meta responseMetadata) {
+	if r == nil {
+		return
+	}
+	if r.ReqID == "" {
+		r.ReqID = meta.ReqID
+	}
+	if r.TraceID == "" {
+		r.TraceID = meta.TraceID
+	}
+	if r.LogID == "" {
+		r.LogID = meta.LogID
+	}
+}
+
+func (r *voiceCloneBaseResponse) responseMetadata() responseMetadata {
+	if r == nil {
+		return responseMetadata{}
+	}
+	return responseMetadata{
+		ReqID:   firstNonEmpty(r.ReqID, r.RequestID, r.BaseResp.ReqID, r.BaseResp.RequestID),
+		TraceID: firstNonEmpty(r.TraceID, r.BaseResp.TraceID),
+		LogID:   firstNonEmpty(r.LogID, r.LogIDAlt, r.BaseResp.LogID),
+	}
 }
 
 func (r *voiceCloneBaseResponse) baseRespErr() error {
@@ -385,7 +428,14 @@ func (r *voiceCloneBaseResponse) baseRespErr() error {
 	if msg == "" {
 		msg = "voice clone request failed"
 	}
-	return &Error{Code: r.BaseResp.StatusCode, Message: msg}
+	meta := r.responseMetadata()
+	return &Error{
+		Code:    r.BaseResp.StatusCode,
+		Message: msg,
+		ReqID:   meta.ReqID,
+		TraceID: meta.TraceID,
+		LogID:   meta.LogID,
+	}
 }
 
 type voiceCloneUploadResponse struct {

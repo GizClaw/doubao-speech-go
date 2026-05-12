@@ -55,7 +55,7 @@ func (s *RealtimeService) Dial(ctx context.Context) (*RealtimeConnection, error)
 	endpoint := strings.TrimRight(s.client.config.wsURL, "/") + realtimeEndpointPath
 	conn, resp, err := s.dialer.DialContext(ctx, endpoint, headers)
 	if err != nil {
-		return nil, wsConnectError(err, resp)
+		return nil, wsConnectError(err, resp, responseMetadata{ReqID: connectReqID, ConnectID: connectReqID})
 	}
 
 	rtConn := &RealtimeConnection{
@@ -77,7 +77,10 @@ func (s *RealtimeService) Dial(ctx context.Context) (*RealtimeConnection, error)
 	}
 	if frame.MessageType == protocol.MessageTypeError {
 		_ = rtConn.Close()
-		return nil, wrapError(parseWSErrorPayload(frame.Payload, frame.ErrorCode), "connection failed")
+		return nil, wrapError(
+			withErrorMetadata(parseWSErrorPayload(frame.Payload, frame.ErrorCode), responseMetadata{ReqID: connectReqID, ConnectID: connectReqID}),
+			"connection failed",
+		)
 	}
 	if !frame.HasEvent || frame.Event != int32(EventConnectionStarted) {
 		_ = rtConn.Close()
@@ -150,7 +153,10 @@ func (c *RealtimeConnection) StartSession(ctx context.Context, cfg *RealtimeConf
 		return nil, wrapError(err, "read start session response")
 	}
 	if frame.MessageType == protocol.MessageTypeError {
-		return nil, wrapError(parseWSErrorPayload(frame.Payload, frame.ErrorCode), "start session failed")
+		return nil, wrapError(
+			withErrorMetadata(parseWSErrorPayload(frame.Payload, frame.ErrorCode), responseMetadata{ReqID: sessionID, ConnectID: c.connectID}),
+			"start session failed",
+		)
 	}
 	if !frame.HasEvent || frame.Event != int32(EventSessionStarted) {
 		return nil, fmt.Errorf("unexpected session response event: %d", frame.Event)
@@ -246,7 +252,7 @@ func (c *RealtimeConnection) readFrameWithContext(ctx context.Context) (*protoco
 		}
 		return frame, nil
 	case websocket.TextMessage:
-		return nil, parseWSErrorPayload(payload, 0)
+		return nil, withErrorMetadata(parseWSErrorPayload(payload, 0), responseMetadata{ReqID: c.connectID, ConnectID: c.connectID})
 	default:
 		return nil, fmt.Errorf("unsupported websocket message type: %d", msgType)
 	}
@@ -606,7 +612,7 @@ func (s *RealtimeSession) receiveLoop() {
 				return
 			}
 		case websocket.TextMessage:
-			s.pushErr(parseWSErrorPayload(payload, 0))
+			s.pushErr(withErrorMetadata(parseWSErrorPayload(payload, 0), responseMetadata{ReqID: s.sessionID, ConnectID: s.conn.connectID}))
 			return
 		default:
 			// Ignore unsupported message types.
@@ -633,11 +639,12 @@ func (s *RealtimeSession) decodeFrame(frame *protocol.ParsedFrame) (*RealtimeEve
 	}
 
 	if frame.MessageType == protocol.MessageTypeError {
-		parsedErr := parseWSErrorPayload(frame.Payload, frame.ErrorCode)
+		parsedErr := withErrorMetadata(parseWSErrorPayload(frame.Payload, frame.ErrorCode), responseMetadata{ReqID: s.sessionID, ConnectID: s.conn.connectID})
 		if apiErr, ok := AsError(parsedErr); ok {
 			evt.Error = apiErr
 			evt.ReqID = apiErr.ReqID
 			evt.TraceID = apiErr.TraceID
+			evt.LogID = apiErr.LogID
 		}
 		if evt.Type == 0 {
 			evt.Type = EventSessionFailed
@@ -870,7 +877,10 @@ func decodeEventPayload(evt *RealtimeEvent) {
 
 	var payload struct {
 		ReqID     string `json:"reqid"`
+		RequestID string `json:"request_id"`
 		TraceID   string `json:"trace_id"`
+		LogID     string `json:"log_id"`
+		LogIDAlt  string `json:"logid"`
 		SessionID string `json:"session_id"`
 
 		Text    string `json:"text"`
@@ -900,11 +910,14 @@ func decodeEventPayload(evt *RealtimeEvent) {
 	if payload.SessionID != "" {
 		evt.SessionID = payload.SessionID
 	}
-	if payload.ReqID != "" {
-		evt.ReqID = payload.ReqID
+	if firstNonEmpty(payload.ReqID, payload.RequestID) != "" {
+		evt.ReqID = firstNonEmpty(payload.ReqID, payload.RequestID)
 	}
 	if payload.TraceID != "" {
 		evt.TraceID = payload.TraceID
+	}
+	if firstNonEmpty(payload.LogID, payload.LogIDAlt) != "" {
+		evt.LogID = firstNonEmpty(payload.LogID, payload.LogIDAlt)
 	}
 
 	if payload.Content != "" {
@@ -947,8 +960,9 @@ func decodeEventPayload(evt *RealtimeEvent) {
 		evt.Error = &Error{
 			Code:    payload.Code,
 			Message: message,
-			ReqID:   payload.ReqID,
+			ReqID:   firstNonEmpty(payload.ReqID, payload.RequestID),
 			TraceID: payload.TraceID,
+			LogID:   firstNonEmpty(payload.LogID, payload.LogIDAlt),
 		}
 	}
 }

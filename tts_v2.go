@@ -57,6 +57,8 @@ type TTSV2Chunk struct {
 	Audio   []byte `json:"-"`
 	IsLast  bool   `json:"is_last"`
 	ReqID   string `json:"reqid,omitempty"`
+	TraceID string `json:"trace_id,omitempty"`
+	LogID   string `json:"log_id,omitempty"`
 	Code    int    `json:"code"`
 	Message string `json:"message,omitempty"`
 }
@@ -115,7 +117,7 @@ func (s *TTSServiceV2) Stream(ctx context.Context, req *TTSV2Request) iter.Seq2[
 			return
 		}
 
-		if err := parseTTSV2HTTPStream(resp.Body, yield); err != nil {
+		if err := parseTTSV2HTTPStream(resp.Body, responseMetadata{LogID: logID}, yield); err != nil {
 			yield(nil, err)
 		}
 	}
@@ -179,18 +181,16 @@ func normalizeTTSV2Request(req *TTSV2Request) (*TTSV2Request, error) {
 	return &normalized, nil
 }
 
-func parseTTSV2HTTPStream(body io.Reader, yield func(*TTSV2Chunk, error) bool) error {
+func parseTTSV2HTTPStream(body io.Reader, baseMeta responseMetadata, yield func(*TTSV2Chunk, error) bool) error {
 	reader := bufio.NewReader(body)
 	seenFinal := false
-	lastReqID := ""
+	lastMeta := baseMeta
 
 	for {
 		line, err := reader.ReadBytes('\n')
 		if len(line) > 0 {
-			chunk, isDone, reqID, parseErr := parseTTSV2HTTPStreamLine(line)
-			if reqID != "" {
-				lastReqID = reqID
-			}
+			chunk, isDone, meta, parseErr := parseTTSV2HTTPStreamLine(line, baseMeta)
+			lastMeta = meta.withFallback(lastMeta)
 			if parseErr != nil {
 				return parseErr
 			}
@@ -210,51 +210,65 @@ func parseTTSV2HTTPStream(body io.Reader, yield func(*TTSV2Chunk, error) bool) e
 				if seenFinal {
 					return nil
 				}
-				return &Error{Code: CodeServerError, Message: "tts stream ended before final frame", ReqID: lastReqID}
+				return &Error{
+					Code:    CodeServerError,
+					Message: "tts stream ended before final frame",
+					ReqID:   lastMeta.ReqID,
+					TraceID: lastMeta.TraceID,
+					LogID:   lastMeta.LogID,
+				}
 			}
 			return wrapError(err, "read tts stream line")
 		}
 	}
 }
 
-func parseTTSV2HTTPStreamLine(line []byte) (*TTSV2Chunk, bool, string, error) {
+func parseTTSV2HTTPStreamLine(line []byte, baseMeta responseMetadata) (*TTSV2Chunk, bool, responseMetadata, error) {
 	trimmed := bytes.TrimSpace(line)
 	if len(trimmed) == 0 {
-		return nil, false, "", nil
+		return nil, false, baseMeta, nil
 	}
 
 	var payload ttsV2HTTPStreamLine
 	if err := json.Unmarshal(trimmed, &payload); err != nil {
-		return nil, false, "", wrapError(err, "unmarshal tts stream line")
+		return nil, false, baseMeta, wrapError(err, "unmarshal tts stream line")
 	}
+
+	meta := responseMetadata{
+		ReqID:   payload.ReqID,
+		TraceID: payload.TraceID,
+		LogID:   firstNonEmpty(payload.LogID, payload.LogIDAlt),
+	}.withFallback(baseMeta)
 
 	if payload.Code != 0 && payload.Code != ttsV2CodeStreamDone {
 		msg := strings.TrimSpace(payload.Message)
 		if msg == "" {
 			msg = "tts stream request failed"
 		}
-		return nil, true, payload.ReqID, &Error{Code: payload.Code, Message: msg, ReqID: payload.ReqID}
+		return nil, true, meta, &Error{Code: payload.Code, Message: msg, ReqID: meta.ReqID, TraceID: meta.TraceID, LogID: meta.LogID}
 	}
 
 	audio, hasAudio, err := decodeTTSV2AudioData(payload.Data)
 	if err != nil {
-		return nil, false, payload.ReqID, err
+		return nil, false, meta, err
 	}
 
 	isLast := payload.Done || payload.Code == ttsV2CodeStreamDone
 	if !hasAudio && !isLast {
-		return nil, false, payload.ReqID, nil
+		return nil, false, meta, nil
 	}
 
 	chunk := &TTSV2Chunk{
 		Audio:   audio,
 		IsLast:  isLast,
-		ReqID:   payload.ReqID,
+		ReqID:   meta.ReqID,
+		TraceID: meta.TraceID,
+		LogID:   meta.LogID,
 		Code:    payload.Code,
 		Message: payload.Message,
 	}
 
-	return chunk, isLast, payload.ReqID, nil
+	return chunk, isLast, meta, nil
 }
 
 func decodeTTSV2AudioData(raw json.RawMessage) ([]byte, bool, error) {
@@ -309,9 +323,12 @@ type ttsV2AudioParams struct {
 }
 
 type ttsV2HTTPStreamLine struct {
-	ReqID   string          `json:"reqid"`
-	Code    int             `json:"code"`
-	Message string          `json:"message"`
-	Done    bool            `json:"done"`
-	Data    json.RawMessage `json:"data"`
+	ReqID    string          `json:"reqid"`
+	TraceID  string          `json:"trace_id"`
+	LogID    string          `json:"log_id"`
+	LogIDAlt string          `json:"logid"`
+	Code     int             `json:"code"`
+	Message  string          `json:"message"`
+	Done     bool            `json:"done"`
+	Data     json.RawMessage `json:"data"`
 }
