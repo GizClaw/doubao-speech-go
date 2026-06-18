@@ -34,9 +34,10 @@ const (
 	ResourceASRStreamV2 = "volc.seedasr.sauc.duration"
 	ResourceASRFile     = "volc.bigasr.auc.duration"
 
-	ResourceRealtime    = "volc.speech.dialog"
-	ResourcePodcast     = "volc.service_type.10050"
-	ResourceTranslation = "volc.megatts.simt"
+	ResourceRealtime     = "volc.speech.dialog"
+	ResourcePodcast      = "volc.service_type.10050"
+	ResourceTranslation  = "volc.megatts.simt"
+	ResourceASTTranslate = "volc.service_type.10053"
 )
 
 // Client is the SDK entry point.
@@ -52,6 +53,10 @@ type Client struct {
 
 	// Realtime dialogue.
 	Realtime *RealtimeService
+
+	// AST realtime translation.
+	ASTTranslate *ASTTranslateService
+	AST          *ASTTranslateService
 
 	// TTS V2 WebSocket synthesis.
 	TTS   *TTSServiceV2
@@ -106,6 +111,9 @@ func NewClient(appID string, opts ...Option) *Client {
 	c.ASRV2 = asrV2
 	c.VoiceClone = voiceClone
 	c.Realtime = newRealtimeService(c)
+	astTranslate := newASTTranslateService(c)
+	c.ASTTranslate = astTranslate
+	c.AST = astTranslate
 	c.TTS = ttsV2
 	c.TTSV2 = ttsV2
 

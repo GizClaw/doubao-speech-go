@@ -18,6 +18,9 @@ vendor/
 # Go workspace checksum
 go.work.sum
 
+# Local environment files
+.env
+
 # IDE and OS files
 .idea/
 .vscode/
