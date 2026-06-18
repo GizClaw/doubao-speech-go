@@ -24,8 +24,10 @@ const (
 	realtimeFinishSessionEvent int32 = 102
 	realtimeTaskAudioEvent     int32 = 200
 	realtimeSayHelloEvent      int32 = 300
+	realtimeEndASREvent        int32 = 400
 	realtimeTTSTextEvent       int32 = 500
 	realtimeUserTextEvent      int32 = 501
+	realtimeClientInterrupt    int32 = 515
 
 	defaultRealtimeEventBuffer         = 64
 	defaultRealtimeBackpressureTimeout = 2 * time.Second
@@ -364,15 +366,31 @@ func (s *RealtimeSession) SayHello(ctx context.Context, content string) error {
 	return s.sendJSONEvent(ctx, realtimeSayHelloEvent, map[string]any{"content": content})
 }
 
-// Interrupt interrupts current generation (event=102).
+// EndASR signals the end of client-side audio input in push-to-talk mode (event=400).
+func (s *RealtimeSession) EndASR(ctx context.Context) error {
+	if err := s.guardSend(ctx); err != nil {
+		return err
+	}
+	return s.sendJSONEvent(ctx, realtimeEndASREvent, map[string]any{})
+}
+
+// Interrupt interrupts current generation (event=515).
 func (s *RealtimeSession) Interrupt(ctx context.Context) error {
+	if err := s.guardSend(ctx); err != nil {
+		return err
+	}
+	return s.sendJSONEvent(ctx, realtimeClientInterrupt, map[string]any{})
+}
+
+// FinishSession ends the current session while leaving the websocket connection reusable (event=102).
+func (s *RealtimeSession) FinishSession(ctx context.Context) error {
 	if err := s.guardSend(ctx); err != nil {
 		return err
 	}
 	return s.sendJSONEvent(ctx, realtimeFinishSessionEvent, map[string]any{"session_id": s.sessionID})
 }
 
-// SendTTSText sends incremental TTS text (event=500).
+// SendTTSText sends one complete caller-provided TTS text transaction (event=500).
 func (s *RealtimeSession) SendTTSText(ctx context.Context, text string) error {
 	if strings.TrimSpace(text) == "" {
 		return newAPIError(CodeParamError, "tts text is empty")
@@ -382,7 +400,25 @@ func (s *RealtimeSession) SendTTSText(ctx context.Context, text string) error {
 	}
 
 	s.resetTurnFinalState()
-	return s.sendJSONEvent(ctx, realtimeTTSTextEvent, map[string]any{"content": text})
+	if err := s.sendJSONEvent(ctx, realtimeTTSTextEvent, map[string]any{
+		"start":   true,
+		"content": "",
+		"end":     false,
+	}); err != nil {
+		return err
+	}
+	if err := s.sendJSONEvent(ctx, realtimeTTSTextEvent, map[string]any{
+		"start":   false,
+		"content": text,
+		"end":     false,
+	}); err != nil {
+		return err
+	}
+	return s.sendJSONEvent(ctx, realtimeTTSTextEvent, map[string]any{
+		"start":   false,
+		"content": "",
+		"end":     true,
+	})
 }
 
 // UpdateHistory replaces the whole local history snapshot used by future turns.
@@ -806,6 +842,20 @@ func normalizeRealtimeConfig(cfg *RealtimeConfig) (RealtimeConfig, error) {
 	if err := util.ValidateBits(base.TTS.AudioConfig.Bits); err != nil {
 		return base, newAPIError(CodeParamError, err.Error())
 	}
+	if err := validateRealtimeInputMode(base.InputMode); err != nil {
+		return base, err
+	}
+	model, err := normalizeRealtimeModel(base.Model)
+	if err != nil {
+		return base, err
+	}
+	base.Model = model
+	if err := validateRealtimeRate("speech_rate", base.TTS.AudioConfig.SpeechRate); err != nil {
+		return base, err
+	}
+	if err := validateRealtimeRate("loudness_rate", base.TTS.AudioConfig.LoudnessRate); err != nil {
+		return base, err
+	}
 
 	base.History = cloneConversationHistory(base.History)
 	base.Prompt = clonePromptConfig(base.Prompt)
@@ -835,7 +885,17 @@ func buildRealtimeStartPayload(cfg RealtimeConfig) ([]byte, error) {
 	maps.Copy(asr, cfg.ASR.Extra)
 
 	tts := payload["tts"].(map[string]any)
-	maps.Copy(tts, cfg.TTS.Extra)
+	ttsAudio := ensureRealtimeObject(tts, "audio_config")
+	copyRealtimeExtra(tts, cfg.TTS.Extra, "audio_config")
+	if extraAudio, ok := cfg.TTS.Extra["audio_config"].(map[string]any); ok {
+		maps.Copy(ttsAudio, extraAudio)
+	}
+	if cfg.TTS.AudioConfig.SpeechRate != 0 {
+		ttsAudio["speech_rate"] = cfg.TTS.AudioConfig.SpeechRate
+	}
+	if cfg.TTS.AudioConfig.LoudnessRate != 0 {
+		ttsAudio["loudness_rate"] = cfg.TTS.AudioConfig.LoudnessRate
+	}
 
 	dialog := payload["dialog"].(map[string]any)
 	if cfg.Dialog.BotName != "" {
@@ -850,7 +910,19 @@ func buildRealtimeStartPayload(cfg RealtimeConfig) ([]byte, error) {
 	if cfg.Dialog.CharacterManifest != "" {
 		dialog["character_manifest"] = cfg.Dialog.CharacterManifest
 	}
-	maps.Copy(dialog, cfg.Dialog.Extra)
+	copyRealtimeExtra(dialog, cfg.Dialog.Extra, "extra")
+	if cfg.InputMode != RealtimeInputModeDefault || cfg.Model != "" || cfg.Dialog.Extra["extra"] != nil {
+		dialogExtra := ensureRealtimeObject(dialog, "extra")
+		if extra, ok := cfg.Dialog.Extra["extra"].(map[string]any); ok {
+			maps.Copy(dialogExtra, extra)
+		}
+		if cfg.InputMode != RealtimeInputModeDefault {
+			dialogExtra["input_mod"] = string(cfg.InputMode)
+		}
+		if cfg.Model != "" {
+			dialogExtra["model"] = string(cfg.Model)
+		}
+	}
 
 	if cfg.Prompt.System != "" || len(cfg.Prompt.Variables) > 0 {
 		payload["prompt"] = cfg.Prompt
@@ -882,11 +954,22 @@ func decodeEventPayload(evt *RealtimeEvent) {
 		Content string `json:"content"`
 		Audio   string `json:"audio"`
 
+		QuestionID string `json:"question_id"`
+		ReplyID    string `json:"reply_id"`
+		TTSType    string `json:"tts_type"`
+		StatusCode any    `json:"status_code"`
+
 		IsFinal bool `json:"is_final"`
 
 		Code    int    `json:"code"`
 		Message string `json:"message"`
 		Error   string `json:"error"`
+
+		Usage   *RealtimeUsage `json:"usage,omitempty"`
+		Results []struct {
+			Text      string `json:"text"`
+			IsInterim bool   `json:"is_interim"`
+		} `json:"results,omitempty"`
 
 		ASRInfo *struct {
 			Text    string `json:"text"`
@@ -919,6 +1002,24 @@ func decodeEventPayload(evt *RealtimeEvent) {
 		evt.Text = payload.Content
 	} else if payload.Text != "" {
 		evt.Text = payload.Text
+	}
+	evt.QuestionID = payload.QuestionID
+	evt.ReplyID = payload.ReplyID
+	evt.TTSType = payload.TTSType
+	evt.StatusCode = realtimeString(payload.StatusCode)
+	evt.Usage = payload.Usage
+	if len(payload.Results) > 0 {
+		evt.Results = make([]RealtimeASRResult, 0, len(payload.Results))
+		for _, result := range payload.Results {
+			evt.Results = append(evt.Results, RealtimeASRResult{
+				Text:      result.Text,
+				IsInterim: result.IsInterim,
+			})
+			if evt.Text == "" && result.Text != "" {
+				evt.Text = result.Text
+			}
+			evt.IsFinal = evt.IsFinal || !result.IsInterim
+		}
 	}
 
 	if payload.ASRInfo != nil {
@@ -959,6 +1060,88 @@ func decodeEventPayload(evt *RealtimeEvent) {
 			TraceID: payload.TraceID,
 			LogID:   firstNonEmpty(payload.LogID, payload.LogIDAlt),
 		}
+	}
+}
+
+func validateRealtimeInputMode(mode RealtimeInputMode) error {
+	switch mode {
+	case RealtimeInputModeDefault, RealtimeInputModeKeepAlive, RealtimeInputModePushToTalk, RealtimeInputModeText, RealtimeInputModeAudioFile:
+		return nil
+	default:
+		return newAPIError(CodeParamError, "unsupported realtime input mode: "+string(mode))
+	}
+}
+
+func normalizeRealtimeModel(model RealtimeModelVersion) (RealtimeModelVersion, error) {
+	value := strings.TrimSpace(strings.ToLower(string(model)))
+	switch value {
+	case "":
+		return "", nil
+	case "1.2.1.1", "o", "omni", "o2", "o2.0", "o20":
+		return RealtimeModelO20, nil
+	case "2.2.0.0", "sc", "sc2", "sc2.0", "sc20":
+		return RealtimeModelSC20, nil
+	default:
+		return "", newAPIError(CodeParamError, "unsupported realtime model: "+string(model))
+	}
+}
+
+func validateRealtimeRate(name string, value int) error {
+	if value < -50 || value > 100 {
+		return newAPIError(CodeParamError, name+" must be in range [-50,100]")
+	}
+	return nil
+}
+
+func ensureRealtimeObject(parent map[string]any, key string) map[string]any {
+	if existing, ok := parent[key].(map[string]any); ok {
+		return existing
+	}
+	obj := map[string]any{}
+	parent[key] = obj
+	return obj
+}
+
+func copyRealtimeExtra(dst, src map[string]any, nestedKeys ...string) {
+	if len(src) == 0 {
+		return
+	}
+	for key, value := range src {
+		if containsRealtimeKey(nestedKeys, key) {
+			continue
+		}
+		dst[key] = value
+	}
+}
+
+func containsRealtimeKey(keys []string, key string) bool {
+	for _, candidate := range keys {
+		if candidate == key {
+			return true
+		}
+	}
+	return false
+}
+
+func realtimeString(value any) string {
+	switch v := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return v
+	case float64:
+		if v == float64(int64(v)) {
+			return fmt.Sprintf("%d", int64(v))
+		}
+		return fmt.Sprintf("%g", v)
+	case int:
+		return fmt.Sprintf("%d", v)
+	case int64:
+		return fmt.Sprintf("%d", v)
+	case json.Number:
+		return v.String()
+	default:
+		return fmt.Sprint(v)
 	}
 }
 

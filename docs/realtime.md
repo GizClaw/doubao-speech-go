@@ -1,0 +1,805 @@
+# Realtime API Usage
+
+This document describes how to use the Doubao end-to-end realtime speech model API through this Go SDK.
+
+The upstream API is a low-latency WebSocket API for speech-to-speech dialogue. It supports streaming input and output, Chinese and English, and currently only exposes a WebSocket transport.
+
+## Example Path
+
+```text
+examples/realtime
+```
+
+## Supported Endpoint
+
+```text
+wss://openspeech.bytedance.com/api/v3/realtime/dialogue
+```
+
+This SDK uses `ResourceRealtime`:
+
+```text
+volc.speech.dialog
+```
+
+and `AppKeyRealtime`:
+
+```text
+PlgvMymc7f3tQnJ6
+```
+
+## Required Environment Variables
+
+- `DOUBAO_APP_ID` or `DOUBAO_REALTIME_APP_ID` (required)
+- `DOUBAO_API_KEY`/`DOUBAO_REALTIME_API_KEY` (recommended) or `DOUBAO_ACCESS_KEY`/`DOUBAO_REALTIME_ACCESS_KEY`
+- `DOUBAO_REALTIME_RESOURCE_ID` (optional, defaults to `volc.speech.dialog`)
+- `DOUBAO_REALTIME_MODEL` (optional, defaults to `1.2.1.1` in the example)
+- `DOUBAO_REALTIME_SPEAKER` (optional)
+
+Run the example:
+
+```bash
+DOUBAO_APP_ID=<your_app_id> \
+DOUBAO_API_KEY=<your_api_key> \
+go run ./examples/realtime -mode text -model 1.2.1.1
+```
+
+Access Key mode:
+
+```bash
+DOUBAO_APP_ID=<your_app_id> \
+DOUBAO_ACCESS_KEY=<your_access_key> \
+go run ./examples/realtime -speaker zh_female_cancan -mode text -model 1.2.1.1
+```
+
+## SDK Quick Start
+
+```go
+ctx := context.Background()
+
+client := doubaospeech.NewClient(
+	appID,
+	doubaospeech.WithResourceID(doubaospeech.ResourceRealtime),
+	doubaospeech.WithAPIKey(apiKey),
+	doubaospeech.WithUserID("realtime-user"),
+)
+
+cfg := doubaospeech.DefaultRealtimeConfig()
+cfg.TTS.Speaker = "zh_female_cancan"
+cfg.InputMode = doubaospeech.RealtimeInputModeText
+cfg.Model = doubaospeech.RealtimeModelO20
+
+session, err := client.Realtime.OpenSession(ctx, &cfg)
+if err != nil {
+	return err
+}
+defer session.Close()
+
+if err := session.SendUserMessage(ctx, "你好，介绍一下你自己"); err != nil {
+	return err
+}
+
+for {
+	evt, err := session.RecvEvent(ctx)
+	if err != nil {
+		return err
+	}
+	if evt == nil {
+		break
+	}
+	if evt.Text != "" {
+		fmt.Println(evt.Text)
+	}
+	if len(evt.Audio) > 0 {
+		// Play or persist the returned audio bytes.
+	}
+	if evt.IsFinal {
+		break
+	}
+}
+```
+
+`cfg.Model` should use the current API version constants (`RealtimeModelO20` / `RealtimeModelSC20`). For compatibility with older local configuration, the SDK normalizes common aliases such as `O` and `SC` to the current version values before sending `StartSession`.
+
+## SDK API Coverage
+
+Covered by this SDK:
+
+- `Realtime.OpenSession(ctx, cfg)`: one-shot `Dial` + `StartSession`
+- `Realtime.Connect(ctx, cfg)`: alias-style one-shot connection/session setup
+- `Realtime.Dial(ctx)`: explicit WebSocket connection setup
+- `RealtimeConnection.StartSession(ctx, cfg)`: start a session on an existing connection
+- `RealtimeSession.SendAudio(ctx, audio)`: send audio chunks with event `200`
+- `RealtimeSession.EndASR(ctx)`: signal end of audio input in push-to-talk mode with event `400`
+- `RealtimeSession.SendUserMessage(ctx, text)` / `SendText`: send text query with event `501`
+- `RealtimeSession.SayHello(ctx, content)`: send greeting text with event `300`
+- `RealtimeSession.SendTTSText(ctx, text)`: send one complete ChatTTSText transaction with event `500`
+- `RealtimeSession.UpdateHistory`, `ReplaceHistory`, `UpdatePrompt`, `UpdateProps`: update local state included in future text turns
+- `RealtimeSession.RecvEvent(ctx)` and `Recv()`: receive parsed server events
+- `RealtimeSession.Interrupt(ctx)`: interrupt current response with event `515`
+- `RealtimeSession.FinishSession(ctx)`: finish current session with event `102` while leaving the WebSocket reusable
+- `RealtimeSession.Close()`: best-effort `FinishSession`, `FinishConnection`, then close WebSocket
+
+Not directly wrapped as typed SDK helpers yet:
+
+- `UpdateConfig` (`201`)
+- `ChatRAGText` (`502`)
+- Conversation management events `510` through `514`
+
+## Credential-backed E2E Smoke
+
+Use the example with local credentials for live Realtime smoke checks:
+
+```bash
+set -a
+source .env
+set +a
+
+go run ./examples/realtime -mode text -round1 "Reply with exactly: pong" -round2 "Reply with exactly: done"
+go run ./examples/realtime -mode realtime -pcm examples/asr_v2_sauc_ws/sample_zh_16k.pcm
+go run ./examples/realtime -mode push_to_talk -pcm examples/asr_v2_sauc_ws/sample_zh_16k.pcm
+go run ./examples/realtime -mode push_to_talk -pcm examples/asr_v2_sauc_ws/sample_zh_16k.pcm -interrupt
+go run ./examples/realtime -mode push_to_talk -pcm examples/asr_v2_sauc_ws/sample_zh_16k.pcm -tts-text "This is an SDK text synthesis smoke test."
+```
+
+These example runs cover:
+
+- text input mode with `ChatTextQuery`
+- default realtime/server-VAD audio mode
+- push-to-talk mode with `EndASR`
+- `Interrupt(ctx)` mapped to `ClientInterrupt`
+- `SendTTSText(ctx, text)` mapped to the start/content/end `ChatTTSText` protocol
+
+## Product Constraints
+
+Model family support differs by version:
+
+| Function | O | O2.0 | SC | SC2.0 |
+|---|---:|---:|---:|---:|
+| Premium voices: `vv`, `xiaohe`, `yunzhou`, `xiaotian` | yes | yes | no | no |
+| System Prompt configuration | yes | yes | yes | yes |
+| Clone voices with `ICL_` or `S_` prefixes | no | no | yes | no |
+| Clone voices 2.0 with `saturn_` or `S_` prefixes | no | yes | no | yes |
+| Maximum context length | unspecified | 12K | unspecified | 12K |
+
+Notes:
+
+- O means Omni, the multimodal model line.
+- SC means Strong Character, the role-playing model line with stronger character expression and personified interaction.
+- O and SC are no longer independently iterated. Capabilities are converging into O2.0 and SC2.0.
+- O/O2.0 prompt fields include `bot_name`, `system_role`, and `speaking_style`.
+- SC/SC2.0 prompt fields include `character_manifest`.
+- O2.0 improves reasoning, speech understanding/generation, singing capability, and audio-level hotfixes for TN transcription and pronunciation issues.
+- SC2.0 improves role performance, character control, voice clone similarity/stability, and audio-level hotfixes.
+
+## Audio Constraints
+
+Client-uploaded PCM audio must be:
+
+- PCM
+- mono
+- 16 kHz sample rate
+- `int16`
+- little-endian
+
+Microphone input can also use Opus. The service converts it internally to PCM:
+
+```json
+{
+  "asr": {
+    "audio_info": {
+      "format": "speech_opus",
+      "sample_rate": 16000,
+      "channel": 1
+    }
+  }
+}
+```
+
+The server returns OGG-wrapped Opus audio by default.
+
+To request PCM output in `StartSession`, include a TTS audio config.
+
+PCM, mono, 24 kHz, 32-bit little-endian:
+
+```json
+{
+  "tts": {
+    "audio_config": {
+      "channel": 1,
+      "format": "pcm",
+      "sample_rate": 24000
+    }
+  }
+}
+```
+
+PCM, mono, 24 kHz, 16-bit little-endian:
+
+```json
+{
+  "tts": {
+    "audio_config": {
+      "channel": 1,
+      "format": "pcm_s16le",
+      "sample_rate": 24000
+    }
+  }
+}
+```
+
+## Speakers
+
+Set the speaker in `StartSession` through `tts.speaker`:
+
+```json
+{
+  "tts": {
+    "speaker": "zh_female_vv_jupiter_bigtts"
+  }
+}
+```
+
+Common end-to-end model speakers:
+
+| Speaker | Description |
+|---|---|
+| `zh_female_vv_jupiter_bigtts` | vv, lively female Chinese voice |
+| `zh_female_xiaohe_jupiter_bigtts` | xiaohe, sweet female Chinese voice with Taiwan accent |
+| `zh_male_yunzhou_jupiter_bigtts` | yunzhou, clear and steady male Chinese voice |
+| `zh_male_xiaotian_jupiter_bigtts` | xiaotian, clear magnetic male Chinese voice |
+| `en_male_tim_uranus_bigtts` | Tim, American English, O2.0 only |
+| `en_female_dacey_uranus_bigtts` | Dacey, American English, O2.0 only |
+| `en_female_stokie_uranus_bigtts` | Stokie, American English, O2.0 only |
+
+SC models also support official clone voices and custom clone voices. For custom clone voice registration:
+
+- SC uses `Resource-Id: seed-icl-1.0`
+- SC2.0 uses `Resource-Id: seed-icl-2.0`
+- SC2.0 requires `model_type: 4`
+- End-to-end clone voices have the best support for Chinese.
+- Supplying transcript text with the training audio is strongly recommended.
+
+## Rate Limits
+
+- QPM means queries per minute. For this API, one query maps to one `StartSession` event. Default quota is 60 QPM per App ID.
+- TPM means tokens per minute. Default quota is 100,000 TPM.
+
+## Input Mode Best Practices
+
+Use `RealtimeConfig.InputMode` to describe the input mode. Unknown advanced fields can still be passed with `Dialog.Extra`.
+
+Microphone streaming:
+
+- Stream audio in real time.
+- 20 ms per packet is recommended.
+- Do not send extra silence chunks manually.
+
+Muted microphone keep-alive mode:
+
+```go
+cfg.InputMode = doubaospeech.RealtimeInputModeKeepAlive
+```
+
+Push-to-talk mode:
+
+```go
+cfg.InputMode = doubaospeech.RealtimeInputModePushToTalk
+// After sending captured audio chunks:
+_ = session.EndASR(ctx)
+```
+
+Text input mode:
+
+```go
+cfg.InputMode = doubaospeech.RealtimeInputModeText
+```
+
+Audio-file mode:
+
+```go
+cfg.InputMode = doubaospeech.RealtimeInputModeAudioFile
+```
+
+For 16 kHz `int16` PCM, one 20 ms packet is 640 bytes. When streaming a recording file, send one 20 ms chunk, sleep 20 ms, then send the next chunk.
+
+After `FinishSession`, the service returns no more events for that session. The WebSocket connection can still be reused by sending a new `StartSession`.
+
+When no further dialogue is needed, send `FinishSession`. If the WebSocket will not be reused, also send `FinishConnection`.
+
+## WebSocket Headers
+
+| Header | Required | Description | Example |
+|---|---:|---|---|
+| `X-Api-App-ID` | yes | App ID from VolcEngine console | `123456789` |
+| `X-Api-Access-Key` | yes for access-key mode | Access Token from VolcEngine console | `your-access-key` |
+| `X-Api-Resource-Id` | yes | Fixed resource ID | `volc.speech.dialog` |
+| `X-Api-App-Key` | yes | Fixed app key | `PlgvMymc7f3tQnJ6` |
+| `X-Api-Connect-Id` | no | User-generated connection trace ID | `d1dcd999-9a9e-4ed6-b227-8649e946f6c4` |
+
+The WebSocket handshake response includes:
+
+| Header | Description |
+|---|---|
+| `X-Tt-Logid` | Server log ID. Log it when diagnosing issues. |
+
+## Binary Protocol
+
+The realtime API uses a binary WebSocket protocol. A frame contains:
+
+1. 4-byte header
+2. optional fields
+3. 4-byte payload size
+4. payload
+
+The header describes protocol version, header size, message type, serialization method, and compression method.
+
+| Byte | Left 4 bits | Right 4 bits | Description |
+|---:|---|---|---|
+| 0 | Protocol version | Header size | version is `0b0001`; header size is currently `0b0001` for 4 bytes |
+| 1 | Message type | Message type specific flags | event/sequence/error flags |
+| 2 | Serialization method | Compression method | raw or JSON; no compression or gzip |
+| 3 | reserved | reserved | `0x00` |
+
+Serialization methods:
+
+- `0b0000`: raw, usually binary audio
+- `0b0001`: JSON
+
+Compression methods:
+
+- `0b0000`: no compression, recommended
+- `0b0001`: gzip
+
+Message types:
+
+| Value | Meaning |
+|---|---|
+| `0b0001` | Full-client request, client text/control event |
+| `0b1001` | Full-server response, server text/control event |
+| `0b0010` | Audio-only request, client audio data |
+| `0b1011` | Audio-only response, server audio data |
+| `0b1111` | Error information |
+
+Optional fields must be encoded in this order when their flags are present:
+
+| Field | Length | Description |
+|---|---:|---|
+| `code` | 4 bytes | error code, only for error frames |
+| `sequence` | 4 bytes | optional event sequence |
+| `event` | 4 bytes | required predefined event ID when event flag is present |
+| `connect id size` | 4 bytes | length of connect ID for connection events |
+| `connect id` | variable | connection ID |
+| `session id size` | 4 bytes | length of session ID for session events |
+| `session id` | variable | session ID |
+
+Sequence flags:
+
+- `0b0000`: no sequence field
+- `0b0001`: non-terminal packet with sequence greater than 0
+- `0b0010`: final packet without sequence
+- `0b0011`: final packet with negative sequence, commonly `-1`
+- `0b0100`: event ID is present
+
+Payload layout:
+
+| Field | Length | Description |
+|---|---:|---|
+| `payload size` | 4 bytes | payload length |
+| `payload` | variable | binary audio or JSON |
+
+Error frame payload:
+
+```json
+{
+  "error": "error message"
+}
+```
+
+## Client Events
+
+| Event ID | Event | Type | SDK helper | Description |
+|---:|---|---|---|---|
+| 1 | `StartConnection` | connection | `Realtime.Dial` | declare WebSocket connection creation |
+| 2 | `FinishConnection` | connection | `RealtimeSession.Close` | close WebSocket connection |
+| 100 | `StartSession` | session | `StartSession`, `OpenSession`, `Connect` | initialize session |
+| 102 | `FinishSession` | session | `FinishSession`, `Close` | end current session; connection can be reused |
+| 200 | `TaskRequest` | session | `SendAudio` | upload audio bytes |
+| 201 | `UpdateConfig` | session | not wrapped | update session config; payload is full replacement |
+| 300 | `SayHello` | session | `SayHello` | send greeting text |
+| 400 | `EndASR` | session | `EndASR` | required in `push_to_talk` when audio input ends |
+| 500 | `ChatTTSText` | session | `SendTTSText` | synthesize caller-provided text instead of model chat text |
+| 501 | `ChatTextQuery` | session | `SendUserMessage`, `SendText` | send a text query |
+| 502 | `ChatRAGText` | session | not wrapped | submit external RAG content |
+| 510 | `ConversationCreate` | context | not wrapped | append context |
+| 511 | `ConversationUpdate` | context | not wrapped | update context item text |
+| 512 | `ConversationRetrieve` | context | not wrapped | retrieve context |
+| 513 | `ConversationTruncate` | context | not wrapped | truncate context by playback progress |
+| 514 | `ConversationDelete` | context | not wrapped | delete a context round |
+| 515 | `ClientInterrupt` | session | `Interrupt` | interrupt server response in push-to-talk mode |
+
+### StartSession Payload
+
+ASR configuration supports fields such as:
+
+- `end_smooth_window_ms`
+- `enable_custom_vad`
+- `enable_asr_twopass`
+- `boosting_table_id`
+- `boosting_table_name`
+- `regex_correct_table_id`
+- `regex_correct_table_name`
+- `context.hotwords`
+- `context.correct_words`
+
+Example:
+
+```json
+{
+  "asr": {
+    "extra": {
+      "end_smooth_window_ms": 1500,
+      "enable_custom_vad": true,
+      "enable_asr_twopass": true,
+      "boosting_table_id": "hotword-table-id",
+      "regex_correct_table_id": "regex-table-id",
+      "context": {
+        "hotwords": [
+          {
+            "word": "豆包"
+          }
+        ],
+        "correct_words": {
+          "原文本": "替换后"
+        }
+      }
+    }
+  }
+}
+```
+
+Dialog configuration supports fields such as:
+
+- `bot_name`: O/O2.0 only; max 20 characters
+- `system_role`: O/O2.0 only
+- `speaking_style`: O/O2.0 only
+- `dialog_id`: load same-dialog conversation history
+- `character_manifest`: SC/SC2.0 only
+- `location`: user location for web search
+- `dialog_context`: initial user/assistant QA context; array length must be even
+- `extra.strict_audit`
+- `extra.audit_response`
+- `extra.enable_volc_websearch`
+- `extra.volc_websearch_type`: `web`, `web_summary`, or `web_agent`
+- `extra.volc_websearch_api_key`
+- `extra.volc_websearch_bot_id`
+- `extra.volc_websearch_result_count`: max 10, default 10
+- `extra.volc_websearch_no_result_message`
+- `extra.input_mod`
+- `extra.enable_music`: applies to version `1.2.1.1`
+- `extra.enable_loudness_norm`: 2.0 output loudness normalization
+- `extra.enable_conversation_truncate`: 2.0 context truncation
+- `extra.enable_user_query_exit`: return user-exit intent signal in `TTSEnded`
+- `extra.model`: required, commonly `1.2.1.1` for O2.0 or `2.2.0.0` for SC2.0
+
+Example:
+
+```json
+{
+  "dialog": {
+    "bot_name": "豆包",
+    "system_role": "你是一个简洁的语音助手。",
+    "speaking_style": "自然、口语化。",
+    "dialog_id": "dialog-id",
+    "character_manifest": "角色描述",
+    "location": {
+      "longitude": 116.4,
+      "latitude": 39.9,
+      "city": "北京",
+      "country": "中国",
+      "province": "北京",
+      "district": "朝阳区",
+      "town": "",
+      "country_code": "CN",
+      "address": "北京"
+    },
+    "dialog_context": [
+      {
+        "role": "user",
+        "text": "你好",
+        "timestamp": 1710000000
+      },
+      {
+        "role": "assistant",
+        "text": "你好，我在。",
+        "timestamp": 1710000001
+      }
+    ],
+    "extra": {
+      "strict_audit": true,
+      "audit_response": "这个问题我暂时不能回答。",
+      "enable_volc_websearch": false,
+      "volc_websearch_type": "web",
+      "volc_websearch_api_key": "search-api-key",
+      "volc_websearch_bot_id": "search-agent-bot-id",
+      "volc_websearch_result_count": 10,
+      "volc_websearch_no_result_message": "没有找到相关结果。",
+      "input_mod": "text",
+      "enable_music": false,
+      "enable_loudness_norm": false,
+      "enable_conversation_truncate": false,
+      "enable_user_query_exit": false,
+      "model": "1.2.1.1"
+    }
+  }
+}
+```
+
+TTS configuration supports fields such as:
+
+- `speaker`
+- `extra.explicit_dialect`: currently only effective for 2.0 model vv voice; values include `dongbei`, `sichuan`, `shaanxi`
+- `extra.aigc_metadata`: AIGC provenance and copyright metadata, currently 2.0 only
+- `extra.tts_2.0_model`: pass `expressive` for expressive cloned voices, currently O2.0 only
+- `audio_config.speech_rate`: `[-50, 100]`, default 0, currently 2.0 only
+- `audio_config.loudness_rate`: `[-50, 100]`, default 0, currently 2.0 only
+
+Example:
+
+```json
+{
+  "tts": {
+    "speaker": "zh_female_vv_jupiter_bigtts",
+    "extra": {
+      "explicit_dialect": "sichuan",
+      "aigc_metadata": {
+        "enable": true,
+        "content_producer": "producer-name",
+        "produce_id": "produce-id",
+        "content_propagator": "propagator-name",
+        "propagate_id": "propagate-id"
+      },
+      "tts_2.0_model": "expressive"
+    },
+    "audio_config": {
+      "speech_rate": 0,
+      "loudness_rate": 0
+    }
+  }
+}
+```
+
+### ChatTTSText Payloads
+
+`RealtimeSession.SendTTSText(ctx, text)` keeps the public SDK surface simple: callers pass one string, and the SDK sends the required start/content/end packets internally.
+
+First packet:
+
+```json
+{
+  "start": true,
+  "content": "",
+  "end": false
+}
+```
+
+Content packet:
+
+```json
+{
+  "start": false,
+  "content": "今天是星期二。",
+  "end": false
+}
+```
+
+Final packet:
+
+```json
+{
+  "start": false,
+  "content": "",
+  "end": true
+}
+```
+
+If a new query interrupts audio playback before the final TTS packet is sent, do not send the final packet.
+
+### ChatRAGText Payload
+
+`external_rag` is a JSON array string whose items use this shape:
+
+```json
+{
+  "title": "document title",
+  "content": "document content"
+}
+```
+
+## Server Events
+
+| Event ID | Event | SDK constant | Description |
+|---:|---|---|---|
+| 50 | `ConnectionStarted` | `EventConnectionStarted` | connection established |
+| 51 | `ConnectionFailed` | `EventConnectionFailed` | connection failed |
+| 52 | `ConnectionFinished` | `EventConnectionEnded` | connection ended |
+| 150 | `SessionStarted` | `EventSessionStarted` | session started; payload can include `dialog_id` |
+| 152 | `SessionFinished` | `EventSessionFinished` | session finished |
+| 153 | `SessionFailed` | `EventSessionFailed` | session failed |
+| 154 | `UsageResponse` | `EventUsageResponse` | per-turn usage |
+| 251 | `ConfigUpdated` | `EventConfigUpdated` | `UpdateConfig` ack |
+| 350 | `TTSSentenceStart` | `EventTTSStarted` | TTS sentence starts |
+| 351 | `TTSSentenceEnd` | `EventTTSSegmentEnd` | TTS sentence ends |
+| 352 | `TTSResponse` | `EventTTSAudioData` | returned audio bytes |
+| 359 | `TTSEnded` | `EventTTSFinished` | one TTS round ended |
+| 450 | `ASRInfo` | `EventASRInfo` | first recognized audio token; useful for interrupting local playback |
+| 451 | `ASRResponse` | `EventASRResponse` | recognized user text |
+| 459 | `ASREnded` | `EventASREnded` | user speech ended |
+| 550 | `ChatResponse` | `EventChatResponse` | model reply text |
+| 553 | `ChatTextQueryConfirmed` | `EventChatTextQueryConfirmed` | text query ack |
+| 559 | `ChatEnded` | `EventChatEnded` | model reply text ended |
+| 567 | `ConversationCreated` | `EventConversationCreated` | context create ack |
+| 568 | `ConversationUpdated` | `EventConversationUpdated` | context update ack |
+| 569 | `ConversationRetrieved` | `EventConversationRetrieved` | context retrieve ack |
+| 570 | `ConversationTruncated` | `EventConversationTruncated` | context truncate ack |
+| 571 | `ConversationDeleted` | `EventConversationDeleted` | context delete ack |
+| 599 | `DialogCommonError` | `EventDialogCommonError` | runtime dialogue error |
+
+Server JSON payloads can contain extra fields. Clients should ignore unknown fields.
+
+Important payload examples:
+
+```json
+{
+  "usage": {
+    "input_text_tokens": 1,
+    "input_audio_tokens": 1,
+    "cached_text_tokens": 0,
+    "cached_audio_tokens": 0,
+    "output_text_tokens": 1,
+    "output_audio_tokens": 1
+  }
+}
+```
+
+```json
+{
+  "tts_type": "default",
+  "text": "你好",
+  "question_id": "question-id",
+  "reply_id": "reply-id"
+}
+```
+
+```json
+{
+  "results": [
+    {
+      "text": "你好",
+      "is_interim": false
+    }
+  ]
+}
+```
+
+```json
+{
+  "content": "你好，我是豆包。",
+  "question_id": "question-id",
+  "reply_id": "reply-id"
+}
+```
+
+`TTSEnded` can include `status_code: "20000002"`, which means the model recognized the user's exit intent. This requires `dialog.extra.enable_user_query_exit=true`.
+
+## Common Interaction Flows
+
+### Server VAD Audio Dialogue
+
+1. Client sends `StartSession`.
+2. Client sends audio through `TaskRequest`.
+3. Server returns `ASRInfo` and `ASRResponse` after speech is detected.
+4. Server returns `ASREnded` after user speech ends.
+5. Server returns text through `ChatResponse`.
+6. Server returns audio through `TTSResponse`.
+7. Server returns `ChatEnded` and `TTSEnded`.
+
+### Text Input
+
+1. Set `dialog.extra.input_mod` to `text`.
+2. Start the session.
+3. Send text with `SendUserMessage` / `SendText`.
+4. Read `ChatResponse`, `TTSResponse`, `ChatEnded`, and `TTSEnded`.
+
+### Caller-Provided TTS Text
+
+1. Wait for `ASREnded` if the flow is responding to a user audio query.
+2. Send `ChatTTSText` packets.
+3. Read `TTSResponse`.
+4. Stop sending the final `end` packet if a new user query interrupts playback before the TTS text stream finishes.
+
+### External RAG Input
+
+Use `ChatRAGText` (`502`) with an `external_rag` JSON array string. The external RAG input must be no longer than 4K characters.
+
+### Web Search
+
+Set these `dialog.extra` fields:
+
+- `enable_volc_websearch`
+- `volc_websearch_type`
+- `volc_websearch_api_key`
+- `volc_websearch_bot_id` when using `web_agent`
+- `volc_websearch_result_count`
+- `volc_websearch_no_result_message`
+
+## Common Errors
+
+For server-side 5xx errors, clients can usually trigger reconnect logic.
+
+| Code | Message keyword | Meaning / fix |
+|---:|---|---|
+| 42000020 | `StartSession event payload asr extra is null` | `asr.extra` is null in `StartSession` |
+| 42000020 | `StartSession event payload tts extra is null` | `tts.extra` is null in `StartSession` |
+| 42000020 | `dialog.extra.model= ? cant support enable_music=true` | `enable_music` was used with an unsupported model version |
+| 42000020 | `volc_websearch_bot_id is required` | `web_agent` requires `volc_websearch_bot_id` |
+| 42000020 | `volc_websearch_api_key is required` | web search requires `volc_websearch_api_key` |
+| 45000003 | `Abnormal silence audio` | no interaction for more than 10 minutes; service released the link |
+| 50000000 | `AudioQueryError` | model chat inference failed |
+| 50000000 | `Yaml: line 43: found unknown escape character` | check illegal characters or escaping in `speaking_style` / `system_role` |
+| 55000001 | `ServerError` | model chat inference failed |
+| 55000001 | `ContextCanceled` | client disconnected without a normal `FinishSession` flow |
+| 55000001 | `ClientError:InvalidSpeaker` | model and speaker do not match |
+| 55000001 | `ExceededConcurrentDurationLimit` | concurrent duration quota exceeded |
+| 52000042 | `DialogAudioIdleTimeoutError` | set `dialog.extra.input_mod` to `keep_alive` when microphone is muted |
+| 50700000 | `CallWithTimeout: stream recv timeout` | model chat response timed out |
+| 50000000 | `ServerError:BigASRFailedCode:1022` | ASR model failed |
+| 52000022 | `AudioChatError` | model chat failed |
+| 52000035 | `S2SQueryConnectError` | speech-to-speech query connection failed |
+| 52000016 | `AudioTTSIdleTimeoutError` | TTS synthesis timed out |
+| 52000011 | `AudioChatRecvTimeoutError` | chat text response timed out |
+
+## Revision Notes From Upstream
+
+| Date | Update |
+|---|---|
+| 2026-04-29 | Overall documentation optimization |
+| 2026-03-07 | O2.0 minor update; O2.0 clone voices; user-query exit mechanism |
+| 2026-02-26 | Context alignment based on actual playback progress |
+| 2026-01-15 | ASR hotwords and replacement rules |
+| 2026-01-05 | Runtime SP config update |
+| 2025-12-17 | O/SC upgraded to 2.0; Opus client audio support |
+| 2025-11-27 | Initial context and context CRUD |
+| 2025-11-24 | Java example |
+| 2025-10-28 | `ASRInfo.question_id`, TTS question/reply IDs, keep-alive muted microphone mode, text query ack `553` |
+| 2025-10-10 | Stream and two-pass ASR mode |
+| 2025-09-23 | Prompt length limits relaxed |
+| 2025-09-22 | Custom end-of-speech config; SC web search and external RAG |
+| 2025-09-11 | O external RAG; no manual silence needed for file/text input when mode is set |
+| 2025-09-09 | SC role play and voice clone |
+| 2025-09-05 | Text-only demo |
+| 2025-08-27 | Text query support |
+| 2025-08-20 | Demo stop-speech parameter and longer persona fields |
+| 2025-08-13 | Go demo WebSocket write fix; web search; usage response; escaped prompt text |
+| 2025-08-06 | Demo supports recording file, multiple voices, and two PCM bit depths |
+| 2025-08-01 | Two PCM bit depths, multiple speakers, built-in web search |
+| 2025-07-14 | Custom audit response |
+| 2025-07-09 | Go example TTS speaker config bug fix |
+| 2025-07-03 | Python demo persona fields; `SayHello`; `ChatTTSText` |
+| 2025-07-01 | `ChatTTSText` should be sent after `ASREnded`; extra error handling |
+| 2025-06-25 | Go demo persona fields; `SayHello`; `ChatTTSText` |
+| 2025-06-10 | Demo interrupts local audio playback on user query |
+| 2025-06-05 | Demo sends `FinishSession` and `FinishConnection` before closing WebSocket |
+| 2025-06-05 | `ChatTTSText` best practices |
+| 2025-06-04 | Usage can be checked in VolcEngine console |
+| 2025-06-04 | Go demo adds `SayHello` and `ChatTTSText` construction examples |
+| 2025-06-03 | Python demo |
+| 2025-05-30 | Demo can save PCM to file |
+| 2025-05-30 | Message type specific flags documentation |
+| 2025-05-28 | Go demo fixes slow recording upload |
+
+## References
+
+- Realtime API entry: <https://www.volcengine.com/docs/6561/1594356>
+- Voice list: <https://www.volcengine.com/docs/6561/1257544>
+- Voice clone registration: <https://www.volcengine.com/docs/6561/1305191>

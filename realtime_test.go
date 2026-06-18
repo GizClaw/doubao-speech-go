@@ -97,6 +97,233 @@ func TestRealtimeSendUserMessageIncludesUpdatedState(t *testing.T) {
 	}
 }
 
+func TestRealtimeStartPayloadIncludesTypedModeModelAndRates(t *testing.T) {
+	cfg := DefaultRealtimeConfig()
+	cfg.InputMode = RealtimeInputModePushToTalk
+	cfg.Model = RealtimeModelVersion("O")
+	cfg.TTS.AudioConfig.SpeechRate = 12
+	cfg.TTS.AudioConfig.LoudnessRate = -5
+	cfg.Dialog.Extra = map[string]any{
+		"extra": map[string]any{
+			"input_mod": "text",
+			"model":     "2.2.0.0",
+		},
+	}
+	cfg.TTS.Extra = map[string]any{
+		"audio_config": map[string]any{
+			"speech_rate": 99,
+		},
+	}
+
+	normalized, err := normalizeRealtimeConfig(&cfg)
+	if err != nil {
+		t.Fatalf("normalizeRealtimeConfig error = %v", err)
+	}
+	payloadBytes, err := buildRealtimeStartPayload(normalized)
+	if err != nil {
+		t.Fatalf("buildRealtimeStartPayload error = %v", err)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(payloadBytes, &payload); err != nil {
+		t.Fatalf("unmarshal payload: %v", err)
+	}
+
+	dialog := payload["dialog"].(map[string]any)
+	dialogExtra := dialog["extra"].(map[string]any)
+	if got := dialogExtra["input_mod"]; got != string(RealtimeInputModePushToTalk) {
+		t.Fatalf("input_mod = %v, want %s", got, RealtimeInputModePushToTalk)
+	}
+	if got := dialogExtra["model"]; got != string(RealtimeModelO20) {
+		t.Fatalf("model = %v, want %s", got, RealtimeModelO20)
+	}
+
+	tts := payload["tts"].(map[string]any)
+	audioConfig := tts["audio_config"].(map[string]any)
+	if got := audioConfig["channel"]; got != float64(1) {
+		t.Fatalf("channel = %v, want preserved channel 1", got)
+	}
+	if got := audioConfig["format"]; got != string(FormatPCM) {
+		t.Fatalf("format = %v, want preserved format %s", got, FormatPCM)
+	}
+	if got := audioConfig["speech_rate"]; got != float64(12) {
+		t.Fatalf("speech_rate = %v, want 12", got)
+	}
+	if got := audioConfig["loudness_rate"]; got != float64(-5) {
+		t.Fatalf("loudness_rate = %v, want -5", got)
+	}
+}
+
+func TestRealtimeConfigValidationRejectsInvalidTypedFields(t *testing.T) {
+	tests := []struct {
+		name string
+		cfg  RealtimeConfig
+		want string
+	}{
+		{
+			name: "input mode",
+			cfg: RealtimeConfig{
+				TTS:       DefaultRealtimeConfig().TTS,
+				InputMode: RealtimeInputMode("invalid"),
+			},
+			want: "unsupported realtime input mode",
+		},
+		{
+			name: "model",
+			cfg: RealtimeConfig{
+				TTS:   DefaultRealtimeConfig().TTS,
+				Model: RealtimeModelVersion("1"),
+			},
+			want: "unsupported realtime model",
+		},
+		{
+			name: "speech rate",
+			cfg: RealtimeConfig{
+				TTS: RealtimeTTSConfig{
+					Speaker: "zh_female_cancan",
+					AudioConfig: RealtimeAudioConfig{
+						Channel:    1,
+						Format:     FormatPCM,
+						SampleRate: SampleRate16000,
+						Bits:       16,
+						SpeechRate: 101,
+					},
+				},
+			},
+			want: "speech_rate",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := normalizeRealtimeConfig(&tt.cfg)
+			if err == nil {
+				t.Fatalf("normalizeRealtimeConfig expected error")
+			}
+			if !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("error = %v, want containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
+func TestRealtimeControlEventsUseUpdatedAPI(t *testing.T) {
+	session, conn := newOpenedRealtimeSessionForTest(t, nil)
+	defer session.Close()
+
+	if err := session.EndASR(context.Background()); err != nil {
+		t.Fatalf("EndASR error = %v", err)
+	}
+	if err := session.Interrupt(context.Background()); err != nil {
+		t.Fatalf("Interrupt error = %v", err)
+	}
+	if err := session.FinishSession(context.Background()); err != nil {
+		t.Fatalf("FinishSession error = %v", err)
+	}
+
+	writes := conn.writesSnapshot()
+	if len(writes) < 5 {
+		t.Fatalf("writes count = %d, want >= 5", len(writes))
+	}
+
+	wantEvents := []int32{realtimeEndASREvent, realtimeClientInterrupt, realtimeFinishSessionEvent}
+	for i, want := range wantEvents {
+		frame, err := protocol.ParseServerFrame(writes[len(writes)-len(wantEvents)+i])
+		if err != nil {
+			t.Fatalf("parse control frame %d: %v", i, err)
+		}
+		if frame.Event != want {
+			t.Fatalf("control frame %d event = %d, want %d", i, frame.Event, want)
+		}
+	}
+}
+
+func TestRealtimeSendTTSTextUsesStartEndProtocol(t *testing.T) {
+	session, conn := newOpenedRealtimeSessionForTest(t, nil)
+	defer session.Close()
+
+	if err := session.SendTTSText(context.Background(), " hello tts "); err != nil {
+		t.Fatalf("SendTTSText error = %v", err)
+	}
+
+	writes := conn.writesSnapshot()
+	if len(writes) < 3 {
+		t.Fatalf("writes count = %d, want >= 3", len(writes))
+	}
+
+	firstFrame, err := protocol.ParseServerFrame(writes[len(writes)-3])
+	if err != nil {
+		t.Fatalf("parse first tts frame: %v", err)
+	}
+	contentFrame, err := protocol.ParseServerFrame(writes[len(writes)-2])
+	if err != nil {
+		t.Fatalf("parse content tts frame: %v", err)
+	}
+	lastFrame, err := protocol.ParseServerFrame(writes[len(writes)-1])
+	if err != nil {
+		t.Fatalf("parse last tts frame: %v", err)
+	}
+	if firstFrame.Event != realtimeTTSTextEvent || contentFrame.Event != realtimeTTSTextEvent || lastFrame.Event != realtimeTTSTextEvent {
+		t.Fatalf("events = %d/%d/%d, want %d", firstFrame.Event, contentFrame.Event, lastFrame.Event, realtimeTTSTextEvent)
+	}
+
+	var firstPayload map[string]any
+	if err := json.Unmarshal(firstFrame.Payload, &firstPayload); err != nil {
+		t.Fatalf("unmarshal first payload: %v", err)
+	}
+	if firstPayload["start"] != true || firstPayload["end"] != false || firstPayload["content"] != "" {
+		t.Fatalf("first payload = %#v, want start packet", firstPayload)
+	}
+
+	var contentPayload map[string]any
+	if err := json.Unmarshal(contentFrame.Payload, &contentPayload); err != nil {
+		t.Fatalf("unmarshal content payload: %v", err)
+	}
+	if contentPayload["start"] != false || contentPayload["end"] != false || contentPayload["content"] != " hello tts " {
+		t.Fatalf("content payload = %#v, want content packet", contentPayload)
+	}
+
+	var lastPayload map[string]any
+	if err := json.Unmarshal(lastFrame.Payload, &lastPayload); err != nil {
+		t.Fatalf("unmarshal last payload: %v", err)
+	}
+	if lastPayload["start"] != false || lastPayload["end"] != true || lastPayload["content"] != "" {
+		t.Fatalf("last payload = %#v, want end packet", lastPayload)
+	}
+}
+
+func TestRealtimeDecodeUpdatedPayloadFields(t *testing.T) {
+	session, conn := newOpenedRealtimeSessionForTest(t, nil)
+	defer session.Close()
+
+	payload := []byte(`{
+		"content":"partial answer",
+		"question_id":"q-1",
+		"reply_id":"r-1",
+		"tts_type":"default",
+		"status_code":"20000002",
+		"usage":{"input_text_tokens":1,"output_text_tokens":2},
+		"results":[{"text":"recognized","is_interim":false}]
+	}`)
+	conn.enqueue(websocket.BinaryMessage, mustBuildRealtimeServerEventFrame(t, int32(EventChatResponse), session.SessionID(), "", payload))
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	evt, err := session.RecvEvent(ctx)
+	if err != nil {
+		t.Fatalf("RecvEvent error = %v", err)
+	}
+	if evt.QuestionID != "q-1" || evt.ReplyID != "r-1" || evt.TTSType != "default" || evt.StatusCode != "20000002" {
+		t.Fatalf("event metadata = %+v", evt)
+	}
+	if evt.Usage == nil || evt.Usage.InputTextTokens != 1 || evt.Usage.OutputTextTokens != 2 {
+		t.Fatalf("usage = %+v", evt.Usage)
+	}
+	if len(evt.Results) != 1 || evt.Results[0].Text != "recognized" || evt.Results[0].IsInterim {
+		t.Fatalf("results = %+v", evt.Results)
+	}
+}
+
 func TestRealtimeRecvFinalThenErrorOrder(t *testing.T) {
 	session, conn := newOpenedRealtimeSessionForTest(t, nil)
 	defer session.Close()

@@ -16,6 +16,7 @@ const (
 	EventSessionFinished RealtimeEventType = 152
 	EventSessionFailed   RealtimeEventType = 153
 	EventUsageResponse   RealtimeEventType = 154
+	EventConfigUpdated   RealtimeEventType = 251
 
 	// ASR events.
 	EventASRInfo     RealtimeEventType = 450
@@ -29,8 +30,41 @@ const (
 	EventTTSFinished   RealtimeEventType = 359
 
 	// Chat events.
-	EventChatResponse RealtimeEventType = 550
-	EventChatEnded    RealtimeEventType = 559
+	EventChatResponse           RealtimeEventType = 550
+	EventChatTextQueryConfirmed RealtimeEventType = 553
+	EventChatEnded              RealtimeEventType = 559
+
+	// Conversation events.
+	EventConversationCreated   RealtimeEventType = 567
+	EventConversationUpdated   RealtimeEventType = 568
+	EventConversationRetrieved RealtimeEventType = 569
+	EventConversationTruncated RealtimeEventType = 570
+	EventConversationDeleted   RealtimeEventType = 571
+	EventDialogCommonError     RealtimeEventType = 599
+)
+
+// RealtimeInputMode controls how the session receives user input.
+type RealtimeInputMode string
+
+const (
+	// RealtimeInputModeDefault leaves input_mod unset and uses realtime server-VAD audio.
+	RealtimeInputModeDefault RealtimeInputMode = ""
+	// RealtimeInputModeKeepAlive keeps muted microphone sessions alive.
+	RealtimeInputModeKeepAlive RealtimeInputMode = "keep_alive"
+	// RealtimeInputModePushToTalk uses client-controlled end-of-speech.
+	RealtimeInputModePushToTalk RealtimeInputMode = "push_to_talk"
+	// RealtimeInputModeText sends user turns as text.
+	RealtimeInputModeText RealtimeInputMode = "text"
+	// RealtimeInputModeAudioFile streams a recording file as timed audio chunks.
+	RealtimeInputModeAudioFile RealtimeInputMode = "audio_file"
+)
+
+// RealtimeModelVersion selects the realtime model family.
+type RealtimeModelVersion string
+
+const (
+	RealtimeModelO20  RealtimeModelVersion = "1.2.1.1"
+	RealtimeModelSC20 RealtimeModelVersion = "2.2.0.0"
 )
 
 // RealtimeConfig represents one realtime session config.
@@ -42,6 +76,9 @@ type RealtimeConfig struct {
 	Prompt  RealtimePromptConfig          `json:"prompt" yaml:"prompt,omitempty"`
 	Props   RealtimeGenerationProps       `json:"props" yaml:"props,omitempty"`
 	History []RealtimeConversationMessage `json:"history,omitempty" yaml:"history,omitempty"`
+
+	InputMode RealtimeInputMode    `json:"input_mode,omitempty" yaml:"input_mode,omitempty"`
+	Model     RealtimeModelVersion `json:"model,omitempty" yaml:"model,omitempty"`
 
 	ResourceID string `json:"resource_id,omitempty" yaml:"resource_id,omitempty"`
 
@@ -65,10 +102,12 @@ type RealtimeTTSConfig struct {
 
 // RealtimeAudioConfig describes audio IO parameters.
 type RealtimeAudioConfig struct {
-	Channel    int         `json:"channel" yaml:"channel"`
-	Format     AudioFormat `json:"format" yaml:"format"`
-	SampleRate SampleRate  `json:"sample_rate" yaml:"sample_rate"`
-	Bits       int         `json:"bits,omitempty" yaml:"bits,omitempty"`
+	Channel      int         `json:"channel" yaml:"channel"`
+	Format       AudioFormat `json:"format" yaml:"format"`
+	SampleRate   SampleRate  `json:"sample_rate" yaml:"sample_rate"`
+	Bits         int         `json:"bits,omitempty" yaml:"bits,omitempty"`
+	SpeechRate   int         `json:"speech_rate,omitempty" yaml:"speech_rate,omitempty"`
+	LoudnessRate int         `json:"loudness_rate,omitempty" yaml:"loudness_rate,omitempty"`
 }
 
 // RealtimeDialogConfig configures dialogue behavior.
@@ -113,12 +152,35 @@ type RealtimeEvent struct {
 	Audio   []byte `json:"audio,omitempty"`
 	Payload []byte `json:"payload,omitempty"`
 
+	QuestionID string              `json:"question_id,omitempty"`
+	ReplyID    string              `json:"reply_id,omitempty"`
+	TTSType    string              `json:"tts_type,omitempty"`
+	StatusCode string              `json:"status_code,omitempty"`
+	Results    []RealtimeASRResult `json:"results,omitempty"`
+	Usage      *RealtimeUsage      `json:"usage,omitempty"`
+
 	Error   *Error `json:"error,omitempty"`
 	IsFinal bool   `json:"is_final,omitempty"`
 
 	ReqID   string `json:"reqid,omitempty"`
 	TraceID string `json:"trace_id,omitempty"`
 	LogID   string `json:"log_id,omitempty"`
+}
+
+// RealtimeASRResult is one ASR hypothesis returned by the realtime service.
+type RealtimeASRResult struct {
+	Text      string `json:"text"`
+	IsInterim bool   `json:"is_interim"`
+}
+
+// RealtimeUsage contains token usage reported by a realtime response.
+type RealtimeUsage struct {
+	InputTextTokens   int `json:"input_text_tokens,omitempty"`
+	InputAudioTokens  int `json:"input_audio_tokens,omitempty"`
+	CachedTextTokens  int `json:"cached_text_tokens,omitempty"`
+	CachedAudioTokens int `json:"cached_audio_tokens,omitempty"`
+	OutputTextTokens  int `json:"output_text_tokens,omitempty"`
+	OutputAudioTokens int `json:"output_audio_tokens,omitempty"`
 }
 
 // DefaultRealtimeConfig returns a baseline realtime config.

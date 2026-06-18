@@ -6,12 +6,13 @@ import (
 )
 
 var supportedFormats = map[string]struct{}{
-	"pcm":      {},
-	"wav":      {},
-	"mp3":      {},
-	"ogg_opus": {},
-	"aac":      {},
-	"m4a":      {},
+	"pcm":       {},
+	"pcm_s16le": {},
+	"wav":       {},
+	"mp3":       {},
+	"ogg_opus":  {},
+	"aac":       {},
+	"m4a":       {},
 }
 
 var supportedSampleRates = map[int]struct{}{

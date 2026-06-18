@@ -74,6 +74,7 @@ go test . -run TestVoiceCloneUploadAndWaitSuccess -count=1 -v
 
 - `docs/asr_v2_sauc_ws.md`
 - `docs/ast_v2_translate.md`
+- `docs/realtime.md`
 - `docs/tts_v2_http_stream.md`
 - `docs/tts_v2_websocket.md`
 - `docs/voice_clone.md`
