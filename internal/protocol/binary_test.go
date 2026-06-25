@@ -88,6 +88,43 @@ func TestParseServerFrameGzip(t *testing.T) {
 	}
 }
 
+func TestParseServerFrameGzipRejectsOversizedDecodedPayload(t *testing.T) {
+	original := bytes.Repeat([]byte("x"), 10*1024*1024+1)
+	var compressed bytes.Buffer
+	gz := gzip.NewWriter(&compressed)
+	if _, err := gz.Write(original); err != nil {
+		t.Fatalf("gzip write: %v", err)
+	}
+	if err := gz.Close(); err != nil {
+		t.Fatalf("gzip close: %v", err)
+	}
+
+	raw := make([]byte, 0, 12+compressed.Len())
+	raw = append(raw,
+		0x11,
+		byte(MessageTypeFullServer<<4)|byte(FlagPositiveSequence),
+		byte(SerializationJSON<<4)|byte(CompressionGzip),
+		0x00,
+	)
+
+	seq := make([]byte, 4)
+	binary.BigEndian.PutUint32(seq, 7)
+	raw = append(raw, seq...)
+
+	sz := make([]byte, 4)
+	binary.BigEndian.PutUint32(sz, uint32(compressed.Len()))
+	raw = append(raw, sz...)
+	raw = append(raw, compressed.Bytes()...)
+
+	_, err := ParseServerFrame(raw)
+	if err == nil {
+		t.Fatalf("ParseServerFrame expected oversized gzip error")
+	}
+	if !strings.Contains(err.Error(), "gzip decoded payload exceeds limit") {
+		t.Fatalf("error = %v, want gzip decoded payload exceeds limit", err)
+	}
+}
+
 func TestBuildFullClientJSONWithEvent(t *testing.T) {
 	payload := []byte(`{"hello":"world"}`)
 	raw, err := BuildFullClientJSONWithEvent(100, "session-1", payload)

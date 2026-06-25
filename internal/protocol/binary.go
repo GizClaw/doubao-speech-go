@@ -391,9 +391,12 @@ func gzipDecompress(data []byte, maxSize int64) ([]byte, error) {
 		return io.ReadAll(r)
 	}
 
-	b, err := io.ReadAll(io.LimitReader(r, maxSize))
+	b, err := io.ReadAll(io.LimitReader(r, maxSize+1))
 	if err != nil {
 		return nil, err
+	}
+	if int64(len(b)) > maxSize {
+		return nil, fmt.Errorf("gzip decoded payload exceeds limit: %d", maxSize)
 	}
 	return b, nil
 }
