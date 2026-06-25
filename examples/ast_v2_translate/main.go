@@ -74,10 +74,7 @@ func main() {
 		fatalf("invalid chunk size from chunk-ms=%d", *chunkMS)
 	}
 	for offset := 0; offset < len(audio); offset += chunkSize {
-		end := offset + chunkSize
-		if end > len(audio) {
-			end = len(audio)
-		}
+		end := min(offset+chunkSize, len(audio))
 		if err := session.SendAudio(ctx, audio[offset:end]); err != nil {
 			fatalf("send audio: %v", err)
 		}

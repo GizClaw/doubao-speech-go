@@ -24,24 +24,24 @@ type RealtimeDuplexSessionConfig struct {
 	ID           string                       `json:"id,omitempty"`
 	Model        string                       `json:"model,omitempty"`
 	Instructions string                       `json:"instructions,omitempty"`
-	Audio        RealtimeDuplexAudioConfig    `json:"audio,omitempty"`
+	Audio        RealtimeDuplexAudioConfig    `json:"audio"`
 	Tools        []RealtimeDuplexFunctionTool `json:"tools,omitempty"`
 }
 
 // RealtimeDuplexAudioConfig configures input and output audio.
 type RealtimeDuplexAudioConfig struct {
-	Input  RealtimeDuplexAudioInputConfig  `json:"input,omitempty"`
-	Output RealtimeDuplexAudioOutputConfig `json:"output,omitempty"`
+	Input  RealtimeDuplexAudioInputConfig  `json:"input"`
+	Output RealtimeDuplexAudioOutputConfig `json:"output"`
 }
 
 // RealtimeDuplexAudioInputConfig configures client audio sent to the service.
 type RealtimeDuplexAudioInputConfig struct {
-	Format RealtimeDuplexAudioFormat `json:"format,omitempty"`
+	Format RealtimeDuplexAudioFormat `json:"format"`
 }
 
 // RealtimeDuplexAudioOutputConfig configures service audio output.
 type RealtimeDuplexAudioOutputConfig struct {
-	Format   RealtimeDuplexAudioFormat `json:"format,omitempty"`
+	Format   RealtimeDuplexAudioFormat `json:"format"`
 	Speed    int                       `json:"speed,omitempty"`
 	Loudness int                       `json:"loudness,omitempty"`
 	Voice    string                    `json:"voice,omitempty"`

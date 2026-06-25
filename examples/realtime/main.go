@@ -250,10 +250,7 @@ func sendPCMFile(ctx context.Context, session *doubaospeech.RealtimeSession, pat
 	}
 	const chunkSize = 640
 	for offset := 0; offset < len(audio); offset += chunkSize {
-		end := offset + chunkSize
-		if end > len(audio) {
-			end = len(audio)
-		}
+		end := min(offset+chunkSize, len(audio))
 		if err := session.SendAudio(ctx, audio[offset:end]); err != nil {
 			return fmt.Errorf("send audio chunk at offset %d failed: %w", offset, err)
 		}
@@ -264,7 +261,7 @@ func sendPCMFile(ctx context.Context, session *doubaospeech.RealtimeSession, pat
 
 func sendSilence(ctx context.Context, session *doubaospeech.RealtimeSession, chunks int) error {
 	silence := make([]byte, 640)
-	for i := 0; i < chunks; i++ {
+	for i := range chunks {
 		if err := session.SendAudio(ctx, silence); err != nil {
 			return fmt.Errorf("send silence chunk %d failed: %w", i, err)
 		}

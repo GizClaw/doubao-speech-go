@@ -470,10 +470,7 @@ func chunkAudio(data []byte, size int) [][]byte {
 	}
 	chunks := make([][]byte, 0, (len(data)+size-1)/size)
 	for len(data) > 0 {
-		n := size
-		if len(data) < n {
-			n = len(data)
-		}
+		n := min(len(data), size)
 		chunks = append(chunks, data[:n])
 		data = data[n:]
 	}

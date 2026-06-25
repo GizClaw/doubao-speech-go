@@ -39,7 +39,7 @@ type ASTTranslateConfig struct {
 	TargetLanguage string `json:"target_language" yaml:"target_language"`
 
 	SourceAudio ASTAudioConfig       `json:"source_audio" yaml:"source_audio"`
-	TargetAudio ASTTargetAudioConfig `json:"target_audio,omitempty" yaml:"target_audio,omitempty"`
+	TargetAudio ASTTargetAudioConfig `json:"target_audio" yaml:"target_audio,omitempty"`
 
 	SpeakerID                  string `json:"speaker_id,omitempty" yaml:"speaker_id,omitempty"`
 	IsCustomSpeaker            bool   `json:"is_custom_speaker,omitempty" yaml:"is_custom_speaker,omitempty"`
@@ -49,7 +49,7 @@ type ASTTranslateConfig struct {
 	Denoise                    *bool  `json:"denoise,omitempty" yaml:"denoise,omitempty"`
 
 	Corpus *ASTTranslateCorpus `json:"corpus,omitempty" yaml:"corpus,omitempty"`
-	User   ASTUser             `json:"user,omitempty" yaml:"user,omitempty"`
+	User   ASTUser             `json:"user" yaml:"user,omitempty"`
 
 	EventBuffer         int           `json:"-" yaml:"-"`
 	BackpressureTimeout time.Duration `json:"-" yaml:"-"`

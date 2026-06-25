@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"iter"
 	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -1105,12 +1106,7 @@ func copyRealtimeExtra(dst, src map[string]any, nestedKeys ...string) {
 }
 
 func containsRealtimeKey(keys []string, key string) bool {
-	for _, candidate := range keys {
-		if candidate == key {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(keys, key)
 }
 
 func realtimeString(value any) string {
