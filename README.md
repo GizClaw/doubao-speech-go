@@ -32,13 +32,13 @@ Partially implemented:
 
 - [ ] Streaming ASR: `ASRV2.OpenStreamSession` implements `/api/v3/sauc/bigmodel`; `/api/v3/sauc/bigmodel_nostream` and `/api/v3/sauc/bigmodel_async` are documented but not exposed as high-level SDK modes yet.
 - [ ] TTS 1.0/2.0 parameter surface: the SDK covers common speaker/audio/text fields, but advanced official fields such as subtitles, timestamps, usage token return, cache, AIGC watermarking, explicit language/dialect, `context_texts`, and tag parsing still need typed options.
-- [ ] TTS WebSocket single-direction and SSE variants: `docs/语音合成1.0.md` lists `wss://.../tts/unidirectional/stream` and `/tts/unidirectional/sse`; only HTTP Chunked and bidirectional WebSocket are implemented.
-- [ ] Voice clone: `VoiceClone.Upload`, `GetStatus`, and `Activate` implement the older `/api/v1/mega_tts/*` workflow; the newer documented `POST /api/v3/tts/voice_clone` interface in `docs/声音复刻.md` is not implemented yet.
+- [ ] TTS WebSocket single-direction and SSE variants: `docs/tts_v1.md` lists `wss://.../tts/unidirectional/stream` and `/tts/unidirectional/sse`; only HTTP Chunked and bidirectional WebSocket are implemented.
+- [ ] Voice clone: `VoiceClone.Upload`, `GetStatus`, and `Activate` implement the older `/api/v1/mega_tts/*` workflow; the newer documented `POST /api/v3/tts/voice_clone` interface in `docs/voice_clone.md` is not implemented yet.
 - [ ] Realtime 1.0 and full-duplex extensions: core events and extension pass-through are present, but newly documented provider-specific fields should be periodically audited against upstream docs.
 
 Planned:
 
-- [ ] Audio generation: implement `POST /api/v3/tts/create` from `docs/音频生成1.0.md`.
+- [ ] Audio generation: implement `POST /api/v3/tts/create` from `docs/audio_generation.md`.
 - [ ] Voice clone v3: add a typed client for `POST /api/v3/tts/voice_clone` and map its `speaker_status`, `model_type`, and demo-audio response.
 - [ ] ASR optimized/nostream modes: add typed selection for `bigmodel_async` and `bigmodel_nostream`, including final-packet semantics and language/options coverage.
 - [ ] TTS single-direction WebSocket and SSE stream helpers.
@@ -100,14 +100,14 @@ go test . -run TestVoiceCloneUploadAndWaitSuccess -count=1 -v
 
 ## Documentation
 
-- `docs/流式语音识别.md`
-- `docs/同声传译2.0.md`
-- `docs/端到端实时语音.md`
-- `docs/端到端实时语音-全双工版本.md`
-- `docs/语音合成1.0.md`
-- `docs/语音合成2.0.md`
-- `docs/声音复刻.md`
-- `docs/音频生成1.0.md`
+- `docs/streaming_asr.md`
+- `docs/simultaneous_interpretation.md`
+- `docs/realtime_speech.md`
+- `docs/realtime_duplex.md`
+- `docs/tts_v1.md`
+- `docs/tts_v2.md`
+- `docs/voice_clone.md`
+- `docs/audio_generation.md`
 
 ## License
 

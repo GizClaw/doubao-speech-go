@@ -90,10 +90,10 @@ go test ./... -race
 
 ## 6) Example run commands
 See API-specific docs for full env/flags:
-- `docs/流式语音识别.md`
-- `docs/语音合成1.0.md`
-- `docs/语音合成2.0.md`
-- `docs/声音复刻.md`
+- `docs/streaming_asr.md`
+- `docs/tts_v1.md`
+- `docs/tts_v2.md`
+- `docs/voice_clone.md`
 
 Quick smoke test:
 ```bash
