@@ -45,6 +45,39 @@ func TestDoJSONRequestNon2xxMapsAPIError(t *testing.T) {
 	}
 }
 
+type metadataResponse struct {
+	OK bool `json:"ok"`
+	responseMetadata
+}
+
+func (r *metadataResponse) setResponseMetadata(meta responseMetadata) {
+	r.responseMetadata = meta
+}
+
+func TestDoJSONRequestSuccessAppliesBodyMetadata(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("X-Tt-Logid", "log-header")
+		_, _ = io.WriteString(w, `{"ok":true,"request_id":"req-body","trace_id":"trace-body","logid":"log-body"}`)
+	}))
+	defer server.Close()
+
+	client := NewClient("app-test",
+		WithBaseURL(server.URL),
+		WithAPIKey("key-test"),
+	)
+
+	var out metadataResponse
+	if err := client.doJSONRequest(context.Background(), http.MethodPost, "/test", nil, &out, ""); err != nil {
+		t.Fatalf("doJSONRequest error = %v", err)
+	}
+	if !out.OK {
+		t.Fatalf("ok = false, want true")
+	}
+	if out.ReqID != "req-body" || out.TraceID != "trace-body" || out.LogID != "log-body" {
+		t.Fatalf("metadata = reqid %q trace %q log %q", out.ReqID, out.TraceID, out.LogID)
+	}
+}
+
 type stubHTTPDoer struct {
 	req *http.Request
 }

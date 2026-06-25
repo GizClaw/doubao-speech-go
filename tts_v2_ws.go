@@ -779,12 +779,7 @@ func decodeTTSV2Chunk(frame *ttsV2WSParsedFrame, reqID string) (*TTSV2WSChunk, e
 		return nil, wrapError(err, "decode base64 audio")
 	}
 
-	meta := responseMetadata{
-		ReqID:     payload.ReqID,
-		TraceID:   payload.TraceID,
-		LogID:     firstNonEmpty(payload.LogID, payload.LogIDAlt),
-		ConnectID: payload.ConnectID,
-	}.withFallback(responseMetadata{ReqID: reqID, ConnectID: reqID})
+	meta := parseResponseMetadata(frame.payload, responseMetadata{ReqID: reqID, ConnectID: reqID})
 
 	return &TTSV2WSChunk{
 		Audio:     audio,
@@ -797,28 +792,7 @@ func decodeTTSV2Chunk(frame *ttsV2WSParsedFrame, reqID string) (*TTSV2WSChunk, e
 }
 
 func decodeTTSV2EventMetadata(payload []byte, fallback responseMetadata) responseMetadata {
-	if len(payload) == 0 {
-		return fallback
-	}
-
-	var p struct {
-		ReqID     string `json:"reqid"`
-		RequestID string `json:"request_id"`
-		TraceID   string `json:"trace_id"`
-		LogID     string `json:"log_id"`
-		LogIDAlt  string `json:"logid"`
-		ConnectID string `json:"connect_id"`
-	}
-	if err := json.Unmarshal(payload, &p); err != nil {
-		return fallback
-	}
-
-	return responseMetadata{
-		ReqID:     firstNonEmpty(p.ReqID, p.RequestID),
-		TraceID:   p.TraceID,
-		LogID:     firstNonEmpty(p.LogID, p.LogIDAlt),
-		ConnectID: p.ConnectID,
-	}.withFallback(fallback)
+	return parseResponseMetadata(payload, fallback)
 }
 
 func validateTTSV2SessionFinished(payload []byte) error {
@@ -826,19 +800,8 @@ func validateTTSV2SessionFinished(payload []byte) error {
 		return nil
 	}
 
-	var p struct {
-		StatusCode int    `json:"status_code"`
-		Code       int    `json:"code"`
-		Message    string `json:"message"`
-		Error      string `json:"error"`
-		ReqID      string `json:"reqid"`
-		RequestID  string `json:"request_id"`
-		TraceID    string `json:"trace_id"`
-		LogID      string `json:"log_id"`
-		LogIDAlt   string `json:"logid"`
-		ConnectID  string `json:"connect_id"`
-	}
-	if err := json.Unmarshal(payload, &p); err != nil {
+	p, ok := parseAPIErrorPayload(payload)
+	if !ok {
 		return nil
 	}
 
@@ -849,22 +812,15 @@ func validateTTSV2SessionFinished(payload []byte) error {
 	if status == 0 || status == ttsV2StatusSuccess {
 		return nil
 	}
-
-	msg := p.Message
-	if msg == "" {
-		msg = p.Error
-	}
-	if msg == "" {
-		msg = "session finished with non-success status"
-	}
+	meta := parseResponseMetadata(payload, responseMetadata{})
 
 	return &Error{
 		Code:      status,
-		Message:   msg,
-		ReqID:     firstNonEmpty(p.ReqID, p.RequestID),
-		TraceID:   p.TraceID,
-		LogID:     firstNonEmpty(p.LogID, p.LogIDAlt),
-		ConnectID: p.ConnectID,
+		Message:   apiErrorPayloadMessage(p, "session finished with non-success status"),
+		ReqID:     meta.ReqID,
+		TraceID:   meta.TraceID,
+		LogID:     meta.LogID,
+		ConnectID: meta.ConnectID,
 	}
 }
 

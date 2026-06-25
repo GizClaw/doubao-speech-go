@@ -75,69 +75,104 @@ const (
 )
 
 type apiErrorPayload struct {
-	Code      int    `json:"code"`
-	Message   string `json:"message"`
-	Error     string `json:"error"`
-	ReqID     string `json:"reqid"`
-	RequestID string `json:"request_id"`
-	TraceID   string `json:"trace_id"`
-	LogID     string `json:"log_id"`
-	LogIDAlt  string `json:"logid"`
-	ConnectID string `json:"connect_id"`
+	Code       int    `json:"code"`
+	StatusCode int    `json:"status_code"`
+	Message    string `json:"message"`
+	Error      string `json:"error"`
+	responseMetadataPayload
 }
 
 type apiErrorEnvelope struct {
 	Header *apiErrorPayload `json:"header"`
 }
 
-func parseAPIError(statusCode int, body []byte, logID string) error {
-	if len(body) == 0 {
-		return &Error{
-			Code:       statusCode,
-			Message:    http.StatusText(statusCode),
-			HTTPStatus: statusCode,
-			LogID:      logID,
-		}
-	}
-
+func parseAPIErrorPayload(data []byte) (apiErrorPayload, bool) {
 	var payload apiErrorPayload
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return &Error{
-			Code:       statusCode,
-			Message:    string(body),
-			HTTPStatus: statusCode,
-			LogID:      logID,
-		}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return apiErrorPayload{}, false
 	}
 
-	if payload.Code == 0 && payload.Message == "" && payload.Error == "" {
-		var envelope apiErrorEnvelope
-		if err := json.Unmarshal(body, &envelope); err == nil && envelope.Header != nil {
-			payload = *envelope.Header
-		}
+	var envelope apiErrorEnvelope
+	if err := json.Unmarshal(data, &envelope); err == nil && envelope.Header != nil {
+		payload = payload.withFallback(*envelope.Header)
 	}
 
+	return payload, true
+}
+
+func (p apiErrorPayload) withFallback(fallback apiErrorPayload) apiErrorPayload {
+	if p.Code == 0 {
+		p.Code = fallback.Code
+	}
+	if p.StatusCode == 0 {
+		p.StatusCode = fallback.StatusCode
+	}
+	if p.Message == "" {
+		p.Message = fallback.Message
+	}
+	if p.Error == "" {
+		p.Error = fallback.Error
+	}
+	p.responseMetadataPayload = p.responseMetadataPayload.withFallback(fallback.responseMetadataPayload)
+	return p
+}
+
+func apiErrorPayloadCode(payload apiErrorPayload, fallback int) int {
+	code := payload.Code
+	if code == 0 {
+		code = payload.StatusCode
+	}
+	if code == 0 {
+		code = fallback
+	}
+	if code == 0 {
+		code = CodeServerError
+	}
+	return code
+}
+
+func apiErrorPayloadMessage(payload apiErrorPayload, fallback string) string {
 	msg := payload.Message
 	if msg == "" {
 		msg = payload.Error
 	}
 	if msg == "" {
-		msg = http.StatusText(statusCode)
+		msg = fallback
+	}
+	return msg
+}
+
+func parseAPIError(statusCode int, body []byte, logID string) error {
+	baseMeta := responseMetadata{LogID: logID}
+	if len(body) == 0 {
+		return &Error{
+			Code:       statusCode,
+			Message:    http.StatusText(statusCode),
+			HTTPStatus: statusCode,
+			LogID:      baseMeta.LogID,
+		}
 	}
 
-	code := payload.Code
-	if code == 0 {
-		code = statusCode
+	payload, ok := parseAPIErrorPayload(body)
+	if !ok {
+		return &Error{
+			Code:       statusCode,
+			Message:    string(body),
+			HTTPStatus: statusCode,
+			LogID:      baseMeta.LogID,
+		}
 	}
+
+	meta := parseResponseMetadata(body, baseMeta)
 
 	return &Error{
-		Code:       code,
-		Message:    msg,
-		TraceID:    payload.TraceID,
-		LogID:      firstNonEmpty(logID, payload.LogID, payload.LogIDAlt),
-		ConnectID:  payload.ConnectID,
+		Code:       apiErrorPayloadCode(payload, statusCode),
+		Message:    apiErrorPayloadMessage(payload, http.StatusText(statusCode)),
+		TraceID:    meta.TraceID,
+		LogID:      meta.LogID,
+		ConnectID:  meta.ConnectID,
 		HTTPStatus: statusCode,
-		ReqID:      firstNonEmpty(payload.ReqID, payload.RequestID),
+		ReqID:      meta.ReqID,
 	}
 }
 

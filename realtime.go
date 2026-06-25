@@ -943,11 +943,6 @@ func decodeEventPayload(evt *RealtimeEvent) {
 	}
 
 	var payload struct {
-		ReqID     string `json:"reqid"`
-		RequestID string `json:"request_id"`
-		TraceID   string `json:"trace_id"`
-		LogID     string `json:"log_id"`
-		LogIDAlt  string `json:"logid"`
 		SessionID string `json:"session_id"`
 
 		Text    string `json:"text"`
@@ -988,15 +983,10 @@ func decodeEventPayload(evt *RealtimeEvent) {
 	if payload.SessionID != "" {
 		evt.SessionID = payload.SessionID
 	}
-	if firstNonEmpty(payload.ReqID, payload.RequestID) != "" {
-		evt.ReqID = firstNonEmpty(payload.ReqID, payload.RequestID)
-	}
-	if payload.TraceID != "" {
-		evt.TraceID = payload.TraceID
-	}
-	if firstNonEmpty(payload.LogID, payload.LogIDAlt) != "" {
-		evt.LogID = firstNonEmpty(payload.LogID, payload.LogIDAlt)
-	}
+	meta := parseResponseMetadata(evt.Payload, responseMetadata{ReqID: evt.ReqID, TraceID: evt.TraceID, LogID: evt.LogID})
+	evt.ReqID = meta.ReqID
+	evt.TraceID = meta.TraceID
+	evt.LogID = meta.LogID
 
 	if payload.Content != "" {
 		evt.Text = payload.Content
@@ -1056,9 +1046,9 @@ func decodeEventPayload(evt *RealtimeEvent) {
 		evt.Error = &Error{
 			Code:    payload.Code,
 			Message: message,
-			ReqID:   firstNonEmpty(payload.ReqID, payload.RequestID),
-			TraceID: payload.TraceID,
-			LogID:   firstNonEmpty(payload.LogID, payload.LogIDAlt),
+			ReqID:   meta.ReqID,
+			TraceID: meta.TraceID,
+			LogID:   meta.LogID,
 		}
 	}
 }

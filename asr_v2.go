@@ -399,19 +399,8 @@ func decodeASRV2Result(frame *protocol.ParsedFrame, fallbackReqID string) (*ASRV
 }
 
 func parseWSErrorPayload(payload []byte, fallbackCode uint32) error {
-	var e struct {
-		Code       int    `json:"code"`
-		StatusCode int    `json:"status_code"`
-		Message    string `json:"message"`
-		ReqID      string `json:"reqid"`
-		RequestID  string `json:"request_id"`
-		TraceID    string `json:"trace_id"`
-		LogID      string `json:"log_id"`
-		LogIDAlt   string `json:"logid"`
-		ConnectID  string `json:"connect_id"`
-		Error      string `json:"error"`
-	}
-	if err := json.Unmarshal(payload, &e); err != nil {
+	e, ok := parseAPIErrorPayload(payload)
+	if !ok {
 		msg := string(payload)
 		if msg == "" {
 			msg = "unknown websocket error"
@@ -423,32 +412,15 @@ func parseWSErrorPayload(payload []byte, fallbackCode uint32) error {
 		return &Error{Code: code, Message: msg}
 	}
 
-	msg := e.Message
-	if msg == "" {
-		msg = e.Error
-	}
-	if msg == "" {
-		msg = "websocket error"
-	}
-
-	code := e.Code
-	if code == 0 {
-		code = e.StatusCode
-	}
-	if code == 0 {
-		code = int(fallbackCode)
-	}
-	if code == 0 {
-		code = CodeServerError
-	}
+	meta := parseResponseMetadata(payload, responseMetadata{})
 
 	return &Error{
-		Code:      code,
-		Message:   msg,
-		ReqID:     firstNonEmpty(e.ReqID, e.RequestID),
-		TraceID:   e.TraceID,
-		LogID:     firstNonEmpty(e.LogID, e.LogIDAlt),
-		ConnectID: e.ConnectID,
+		Code:      apiErrorPayloadCode(e, int(fallbackCode)),
+		Message:   apiErrorPayloadMessage(e, "websocket error"),
+		ReqID:     meta.ReqID,
+		TraceID:   meta.TraceID,
+		LogID:     meta.LogID,
+		ConnectID: meta.ConnectID,
 	}
 }
 

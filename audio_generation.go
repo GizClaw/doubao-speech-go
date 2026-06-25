@@ -301,13 +301,17 @@ func (r *AudioGenerationCreateResponse) UnmarshalJSON(data []byte) error {
 			aux.Extra = raw
 		}
 	}
-	var meta struct {
-		RequestID string `json:"request_id"`
-		LogIDAlt  string `json:"logid"`
-	}
-	if err := json.Unmarshal(data, &meta); err == nil {
-		aux.ReqID = firstNonEmpty(aux.ReqID, meta.RequestID)
-		aux.LogID = firstNonEmpty(aux.LogID, meta.LogIDAlt)
+	meta := parseResponseMetadata(data, responseMetadata{ReqID: aux.ReqID, TraceID: aux.TraceID, LogID: aux.LogID})
+	aux.ReqID = meta.ReqID
+	aux.TraceID = meta.TraceID
+	aux.LogID = meta.LogID
+	if payload, ok := parseAPIErrorPayload(data); ok {
+		if aux.Code == 0 && (payload.Code != 0 || payload.StatusCode != 0) {
+			aux.Code = apiErrorPayloadCode(payload, 0)
+		}
+		if aux.Message == "" {
+			aux.Message = apiErrorPayloadMessage(payload, "")
+		}
 	}
 
 	aux.AudioBase64 = strings.TrimSpace(aux.AudioBase64)

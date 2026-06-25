@@ -152,7 +152,7 @@ func TestTTSV2WSSessionFailedEventUsesStatusCode(t *testing.T) {
 	}
 	defer session.Close()
 
-	conn.enqueue(websocket.BinaryMessage, buildTTSV2EventFrame(ttsV2EventSessionFailed, "sid1", []byte(`{"status_code":55000001,"message":"session failed","reqid":"s-failed"}`)))
+	conn.enqueue(websocket.BinaryMessage, buildTTSV2EventFrame(ttsV2EventSessionFailed, "sid1", []byte(`{"header":{"status_code":55000001,"message":"session failed","request_id":"s-failed","logid":"log-failed"}}`)))
 
 	var gotErr error
 	for _, recvErr := range session.Recv() {
@@ -172,6 +172,9 @@ func TestTTSV2WSSessionFailedEventUsesStatusCode(t *testing.T) {
 	}
 	if apiErr.ReqID != "s-failed" {
 		t.Fatalf("reqid = %q, want %q", apiErr.ReqID, "s-failed")
+	}
+	if apiErr.LogID != "log-failed" {
+		t.Fatalf("logid = %q, want %q", apiErr.LogID, "log-failed")
 	}
 }
 

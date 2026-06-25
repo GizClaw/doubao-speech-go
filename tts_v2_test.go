@@ -234,6 +234,25 @@ func TestTTSV2HTTPStreamResourceSpeakerMismatchError(t *testing.T) {
 	}
 }
 
+func TestTTSV2HTTPStreamErrorNestedHeaderMetadata(t *testing.T) {
+	line := []byte(`{"code":55000000,"message":"failed","header":{"request_id":"req-header","trace_id":"trace-header","logid":"log-header"}}`)
+
+	_, _, _, err := parseTTSV2HTTPStreamLine(line, responseMetadata{})
+	if err == nil {
+		t.Fatalf("expected business error")
+	}
+	apiErr, ok := AsError(err)
+	if !ok {
+		t.Fatalf("want *Error, got %T (%v)", err, err)
+	}
+	if apiErr.Code != 55000000 || apiErr.Message != "failed" {
+		t.Fatalf("error = %#v", apiErr)
+	}
+	if apiErr.ReqID != "req-header" || apiErr.TraceID != "trace-header" || apiErr.LogID != "log-header" {
+		t.Fatalf("metadata = reqid %q trace %q log %q", apiErr.ReqID, apiErr.TraceID, apiErr.LogID)
+	}
+}
+
 func TestTTSV2HTTPStreamEOFWithoutFinalFrameReturnsError(t *testing.T) {
 	partialAudio := []byte("partial-audio")
 

@@ -234,11 +234,7 @@ func parseTTSV2HTTPStreamLine(line []byte, baseMeta responseMetadata) (*TTSV2Chu
 		return nil, false, baseMeta, wrapError(err, "unmarshal tts stream line")
 	}
 
-	meta := responseMetadata{
-		ReqID:   payload.ReqID,
-		TraceID: payload.TraceID,
-		LogID:   firstNonEmpty(payload.LogID, payload.LogIDAlt),
-	}.withFallback(baseMeta)
+	meta := parseResponseMetadata(trimmed, baseMeta)
 
 	if payload.Code != 0 && payload.Code != ttsV2CodeStreamDone {
 		msg := strings.TrimSpace(payload.Message)
@@ -323,12 +319,8 @@ type ttsV2AudioParams struct {
 }
 
 type ttsV2HTTPStreamLine struct {
-	ReqID    string          `json:"reqid"`
-	TraceID  string          `json:"trace_id"`
-	LogID    string          `json:"log_id"`
-	LogIDAlt string          `json:"logid"`
-	Code     int             `json:"code"`
-	Message  string          `json:"message"`
-	Done     bool            `json:"done"`
-	Data     json.RawMessage `json:"data"`
+	Code    int             `json:"code"`
+	Message string          `json:"message"`
+	Done    bool            `json:"done"`
+	Data    json.RawMessage `json:"data"`
 }

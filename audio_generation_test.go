@@ -215,6 +215,32 @@ func TestAudioGenerationCreateBusinessError(t *testing.T) {
 	}
 }
 
+func TestAudioGenerationCreateBusinessErrorNestedHeaderMetadata(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = io.WriteString(w, `{"header":{"status_code":45000001,"message":"bad prompt","request_id":"req-header","trace_id":"trace-header","logid":"log-header"}}`)
+	}))
+	defer server.Close()
+
+	client := NewClient("app-test", WithBaseURL(server.URL), WithAPIKey("key-test"))
+	_, err := client.AudioGeneration.Create(context.Background(), &AudioGenerationCreateRequest{
+		Model:      ModelSeedAudio10,
+		TextPrompt: "Generate audio.",
+	})
+	if err == nil {
+		t.Fatalf("expected business error")
+	}
+	apiErr, ok := AsError(err)
+	if !ok {
+		t.Fatalf("want *Error, got %T (%v)", err, err)
+	}
+	if apiErr.Code != 45000001 || apiErr.Message != "bad prompt" {
+		t.Fatalf("error = %#v", apiErr)
+	}
+	if apiErr.ReqID != "req-header" || apiErr.TraceID != "trace-header" || apiErr.LogID != "log-header" {
+		t.Fatalf("metadata = reqid %q trace %q logid %q", apiErr.ReqID, apiErr.TraceID, apiErr.LogID)
+	}
+}
+
 func TestAudioGenerationCreateHTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.Header().Set("X-Tt-Logid", "log-http")
