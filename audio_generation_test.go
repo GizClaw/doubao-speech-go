@@ -297,6 +297,11 @@ func TestNormalizeAudioGenerationCreateRequestValidation(t *testing.T) {
 			want: "model is required",
 		},
 		{
+			name: "unsupported model",
+			req:  &AudioGenerationCreateRequest{Model: "seed-audio-next", TextPrompt: "x"},
+			want: "model must be " + ModelSeedAudio10,
+		},
+		{
 			name: "missing prompt",
 			req:  &AudioGenerationCreateRequest{Model: ModelSeedAudio10},
 			want: "text_prompt is required",

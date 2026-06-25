@@ -148,6 +148,9 @@ func normalizeAudioGenerationCreateRequest(req *AudioGenerationCreateRequest) (*
 	if normalized.Model == "" {
 		return nil, newAPIError(CodeParamError, "model is required")
 	}
+	if normalized.Model != ModelSeedAudio10 {
+		return nil, newAPIError(CodeParamError, "model must be "+ModelSeedAudio10)
+	}
 	normalized.TextPrompt = strings.TrimSpace(normalized.TextPrompt)
 	if normalized.TextPrompt == "" {
 		return nil, newAPIError(CodeParamError, "text_prompt is required")
