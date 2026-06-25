@@ -39,7 +39,6 @@ const (
 // In this migration stage, ASR V2, TTS V2 WS, Voice Clone, and Realtime are implemented.
 type Client struct {
 	// ASR V2 streaming recognition.
-	ASR   *ASRServiceV2
 	ASRV2 *ASRServiceV2
 
 	// Voice cloning.
@@ -53,14 +52,11 @@ type Client struct {
 
 	// AST realtime translation.
 	ASTTranslate *ASTTranslateService
-	AST          *ASTTranslateService
 
 	// Audio generation.
 	AudioGeneration *AudioGenerationService
-	Audio           *AudioGenerationService
 
 	// TTS V2 WebSocket synthesis.
-	TTS   *TTSServiceV2
 	TTSV2 *TTSServiceV2
 
 	config *clientConfig
@@ -105,18 +101,12 @@ func NewClient(appID string, opts ...Option) *Client {
 	asrV2 := newASRServiceV2(c)
 	ttsV2 := newTTSServiceV2(c)
 	voiceClone := newVoiceCloneService(c)
-	c.ASR = asrV2
 	c.ASRV2 = asrV2
 	c.VoiceClone = voiceClone
 	c.Realtime = newRealtimeService(c)
 	c.RealtimeDuplex = newRealtimeDuplexService(c)
-	astTranslate := newASTTranslateService(c)
-	c.ASTTranslate = astTranslate
-	c.AST = astTranslate
-	audioGeneration := newAudioGenerationService(c)
-	c.AudioGeneration = audioGeneration
-	c.Audio = audioGeneration
-	c.TTS = ttsV2
+	c.ASTTranslate = newASTTranslateService(c)
+	c.AudioGeneration = newAudioGenerationService(c)
 	c.TTSV2 = ttsV2
 
 	return c

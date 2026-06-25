@@ -17,6 +17,27 @@ Go SDK for Doubao/Volc speech APIs.
 - Voice clone upload + polling workflow
 - Audio Generation HTTP API
 
+## Public API Surface
+
+Create a client with API-key authentication:
+
+```go
+client := doubaospeech.NewClient(appID, doubaospeech.WithAPIKey(apiKey))
+```
+
+Use the canonical service fields below. Short aliases such as `ASR`, `TTS`,
+`AST`, and `Audio` are intentionally not exposed.
+
+| Service field | API |
+| --- | --- |
+| `client.ASRV2` | Streaming ASR |
+| `client.TTSV2` | TTS HTTP Chunked and bidirectional WebSocket synthesis |
+| `client.Realtime` | Realtime speech 1.0 |
+| `client.RealtimeDuplex` | Realtime full-duplex dialogue |
+| `client.ASTTranslate` | AST simultaneous interpretation |
+| `client.AudioGeneration` | Audio Generation HTTP API |
+| `client.VoiceClone` | Voice clone upload, status, and activation |
+
 ## Roadmap
 
 The detailed API inventory lives in [`docs/`](docs/). Current coverage is:

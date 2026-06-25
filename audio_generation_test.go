@@ -150,7 +150,7 @@ func TestAudioGenerationCreateGeneratesRequestID(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient("app-test", WithBaseURL(server.URL), WithAPIKey("key-test"))
-	resp, err := client.Audio.Create(context.Background(), &AudioGenerationCreateRequest{
+	resp, err := client.AudioGeneration.Create(context.Background(), &AudioGenerationCreateRequest{
 		Model:      ModelSeedAudio10,
 		TextPrompt: "Generate a tiny click.",
 	})
