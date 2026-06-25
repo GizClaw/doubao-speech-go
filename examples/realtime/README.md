@@ -37,8 +37,8 @@ Not covered in this single example (recommended scenarios):
 
 ## Requirements
 
-- `DOUBAO_APP_ID` or `DOUBAO_REALTIME_APP_ID` (required)
-- `DOUBAO_API_KEY`/`DOUBAO_REALTIME_API_KEY` (recommended) **or** `DOUBAO_ACCESS_KEY`/`DOUBAO_REALTIME_ACCESS_KEY`
+- `DOUBAO_APP_ID` or `DOUBAO_REALTIME_APP_ID`
+- `DOUBAO_API_KEY` or `DOUBAO_REALTIME_API_KEY`
 
 ## Run
 
@@ -46,14 +46,6 @@ Not covered in this single example (recommended scenarios):
 DOUBAO_APP_ID=<your_app_id> \
 DOUBAO_API_KEY=<your_api_key> \
 go run ./examples/realtime -mode text -model 1.2.1.1
-```
-
-Use Access Key auth:
-
-```bash
-DOUBAO_APP_ID=<your_app_id> \
-DOUBAO_ACCESS_KEY=<your_access_key> \
-go run ./examples/realtime -speaker zh_female_cancan -mode text -model 1.2.1.1
 ```
 
 ## Key flags

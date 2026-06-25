@@ -15,12 +15,6 @@ const (
 	defaultTimeout = 30 * time.Second
 )
 
-// V2/V3 fixed app keys (official constants, not user credentials).
-const (
-	AppKeyRealtime = "PlgvMymc7f3tQnJ6"
-	AppKeyPodcast  = "aGjiRDfUWi"
-)
-
 // V2/V3 Resource IDs.
 const (
 	ResourceTTSV1        = "seed-tts-1.0"
@@ -54,6 +48,9 @@ type Client struct {
 	// Realtime dialogue.
 	Realtime *RealtimeService
 
+	// Realtime duplex dialogue.
+	RealtimeDuplex *RealtimeDuplexService
+
 	// AST realtime translation.
 	ASTTranslate *ASTTranslateService
 	AST          *ASTTranslateService
@@ -66,11 +63,8 @@ type Client struct {
 }
 
 type clientConfig struct {
-	appID       string
-	accessKey   string // X-Api-Access-Key
-	accessToken string // Bearer token (fallback to X-Api-Access-Key)
-	appKey      string // X-Api-App-Key (defaults to appID)
-	apiKey      string // x-api-key
+	appID  string
+	apiKey string
 
 	cluster    string
 	resourceID string
@@ -111,6 +105,7 @@ func NewClient(appID string, opts ...Option) *Client {
 	c.ASRV2 = asrV2
 	c.VoiceClone = voiceClone
 	c.Realtime = newRealtimeService(c)
+	c.RealtimeDuplex = newRealtimeDuplexService(c)
 	astTranslate := newASTTranslateService(c)
 	c.ASTTranslate = astTranslate
 	c.AST = astTranslate
@@ -120,32 +115,11 @@ func NewClient(appID string, opts ...Option) *Client {
 	return c
 }
 
-// WithBearerToken sets Bearer token.
-// V1 header format is `Authorization: Bearer;{token}` (historical convention).
-func WithBearerToken(token string) Option {
-	return func(c *clientConfig) {
-		c.accessToken = token
-	}
-}
-
-// WithAPIKey sets x-api-key.
+// WithAPIKey sets X-Api-Key authentication.
 func WithAPIKey(apiKey string) Option {
 	return func(c *clientConfig) {
 		c.apiKey = apiKey
 	}
-}
-
-// WithV2APIKey sets V2/V3 authentication.
-func WithV2APIKey(accessKey, appKey string) Option {
-	return func(c *clientConfig) {
-		c.accessKey = accessKey
-		c.appKey = appKey
-	}
-}
-
-// WithRealtimeAPIKey is a compatibility alias.
-func WithRealtimeAPIKey(accessKey, appKey string) Option {
-	return WithV2APIKey(accessKey, appKey)
 }
 
 // WithResourceID sets the default resource_id.
@@ -225,16 +199,8 @@ func WithUserID(userID string) Option {
 }
 
 func (c *Client) authCredentials() auth.Credentials {
-	appKey := c.config.appKey
-	if appKey == "" {
-		appKey = c.config.appID
-	}
-
 	return auth.Credentials{
 		AppID:             c.config.appID,
-		AppKey:            appKey,
-		AccessToken:       c.config.accessToken,
-		AccessKey:         c.config.accessKey,
 		APIKey:            c.config.apiKey,
 		DefaultResourceID: c.config.resourceID,
 	}

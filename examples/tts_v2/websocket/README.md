@@ -10,11 +10,11 @@ examples/tts_v2/websocket/main.go
 
 ## Minimum run command
 
-Use either `DOUBAO_ACCESS_KEY` (or `DOUBAO_TOKEN`) **or** `DOUBAO_API_KEY`.
+The SDK only supports API key authentication.
 
 ```bash
 DOUBAO_APP_ID=<your_app_id> \
-DOUBAO_ACCESS_KEY=<your_access_key> \
+DOUBAO_API_KEY=<your_api_key> \
 go run ./examples/tts_v2/websocket \
   -text "hello from tts websocket example" \
   -speaker zh_female_xiaohe_uranus_bigtts \
@@ -23,17 +23,6 @@ go run ./examples/tts_v2/websocket \
   -sample-rate 24000 \
   -output ./tts_v2_ws_output.mp3
 ```
-
-If your tenant allows `x-api-key`, you can also try API key mode:
-
-```bash
-DOUBAO_APP_ID=<your_app_id> \
-DOUBAO_API_KEY=<your_api_key> \
-go run ./examples/tts_v2/websocket
-```
-
-Some accounts may reject this mode with `Invalid X-Api-Key`.
-In that case, use `DOUBAO_ACCESS_KEY` (or `DOUBAO_TOKEN`) instead.
 
 ## Flags
 
@@ -59,7 +48,7 @@ This sample keeps a thin CLI surface like `examples/asr_v2_sauc_ws`, but adds op
 
 ```bash
 DOUBAO_APP_ID=<your_app_id> \
-DOUBAO_ACCESS_KEY=<your_access_key> \
+DOUBAO_API_KEY=<your_api_key> \
 go run ./examples/tts_v2/websocket \
   -segments "hello|this is segment two|final segment" \
   -sessions 2 \
@@ -75,7 +64,7 @@ Cancel flow example:
 
 ```bash
 DOUBAO_APP_ID=<your_app_id> \
-DOUBAO_ACCESS_KEY=<your_access_key> \
+DOUBAO_API_KEY=<your_api_key> \
 go run ./examples/tts_v2/websocket \
   -segments "hello|unused segment" \
   -cancel-first-session \
@@ -174,7 +163,8 @@ The current runnable sample demonstrates a regular single-speaker flow.
 
 - TTS V2 voice list (official): <https://www.volcengine.com/docs/6561/1257544>
 - TTS V2 WebSocket unidirectional (official): <https://www.volcengine.com/docs/6561/1719100>
-- TTS V2 WebSocket bidirectional (official): <https://www.volcengine.com/docs/6561/1329505>
+- TTS WebSocket bidirectional 1.0 (official): <https://www.volcengine.com/docs/6561/1329505>
+- TTS WebSocket bidirectional 2.0 (official): <https://www.volcengine.com/docs/6561/2532486>
 - ListSpeakers API (official, paginated source of truth): <https://www.volcengine.com/docs/6561/2160690>
 - Migration trace in this repo: `openteam/design_proposal.md`
 

@@ -17,8 +17,7 @@ func TestDoJSONRequestNon2xxMapsAPIError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(
-		"app-test",
+	client := NewClient("app-test",
 		WithBaseURL(server.URL),
 		WithAPIKey("key-test"),
 	)
@@ -61,8 +60,7 @@ func (d *stubHTTPDoer) Do(req *http.Request) (*http.Response, error) {
 
 func TestWithHTTPTransportOverridesDefaultHTTPClient(t *testing.T) {
 	stub := &stubHTTPDoer{}
-	client := NewClient(
-		"app-test",
+	client := NewClient("app-test",
 		WithBaseURL("https://example.com"),
 		WithAPIKey("key-test"),
 		WithHTTPTransport(stub),
@@ -86,5 +84,36 @@ func TestWithHTTPTransportOverridesDefaultHTTPClient(t *testing.T) {
 	}
 	if got := stub.req.Header.Get("x-api-key"); got != "key-test" {
 		t.Fatalf("x-api-key = %q, want %q", got, "key-test")
+	}
+}
+
+func TestDoJSONRequestV3UsesAppIDAndAPIKeyHeaders(t *testing.T) {
+	stub := &stubHTTPDoer{}
+	client := NewClient("app-test",
+		WithBaseURL("https://example.com"),
+		WithAPIKey("key-test"),
+		WithHTTPTransport(stub),
+	)
+
+	if err := client.doJSONRequest(context.Background(), http.MethodPost, "/api/v3/test", nil, nil, ResourceTTSV2); err != nil {
+		t.Fatalf("doJSONRequest error = %v", err)
+	}
+	if stub.req == nil {
+		t.Fatalf("stub request was not captured")
+	}
+	if got := stub.req.Header.Get("X-Api-App-Id"); got != "app-test" {
+		t.Fatalf("X-Api-App-Id = %q, want %q", got, "app-test")
+	}
+	if got := stub.req.Header.Get("X-Api-Key"); got != "key-test" {
+		t.Fatalf("X-Api-Key = %q, want %q", got, "key-test")
+	}
+	if got := stub.req.Header.Get("X-Api-Resource-Id"); got != ResourceTTSV2 {
+		t.Fatalf("X-Api-Resource-Id = %q, want %q", got, ResourceTTSV2)
+	}
+	if got := stub.req.Header.Get("X-Api-Access-Key"); got != "" {
+		t.Fatalf("X-Api-Access-Key = %q, want empty", got)
+	}
+	if got := stub.req.Header.Get("X-Api-App-Key"); got != "" {
+		t.Fatalf("X-Api-App-Key = %q, want empty", got)
 	}
 }

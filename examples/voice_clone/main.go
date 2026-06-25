@@ -17,7 +17,6 @@ func main() {
 		speakerID    string
 		audioPath    string
 		resourceID   string
-		authMode     string
 		modelType    int
 		timeoutSec   int
 		pollInterval int
@@ -26,7 +25,6 @@ func main() {
 	flag.StringVar(&speakerID, "speaker-id", "", "Voice clone speaker ID")
 	flag.StringVar(&audioPath, "audio", "", "Audio file path for voice clone training")
 	flag.StringVar(&resourceID, "resource-id", "", "Voice clone resource ID (optional: seed-icl-1.0 or seed-icl-2.0; empty means auto by model-type)")
-	flag.StringVar(&authMode, "auth-mode", "auto", "Auth mode: auto|token|api")
 	flag.IntVar(&modelType, "model-type", 1, "Voice clone model type")
 	flag.IntVar(&timeoutSec, "timeout-sec", 180, "Task wait timeout in seconds")
 	flag.IntVar(&pollInterval, "poll-interval-ms", 2000, "Task polling interval in milliseconds")
@@ -34,13 +32,8 @@ func main() {
 
 	appID := strings.TrimSpace(os.Getenv("DOUBAO_APP_ID"))
 	apiKey := strings.TrimSpace(os.Getenv("DOUBAO_API_KEY"))
-	accessToken := strings.TrimSpace(os.Getenv("DOUBAO_TOKEN"))
-	if accessToken == "" {
-		accessToken = strings.TrimSpace(os.Getenv("DOUBAO_ACCESS_KEY"))
-	}
-
-	if appID == "" {
-		fmt.Fprintln(os.Stderr, "missing environment variable DOUBAO_APP_ID")
+	if appID == "" || apiKey == "" {
+		fmt.Fprintln(os.Stderr, "missing DOUBAO_APP_ID or DOUBAO_API_KEY")
 		os.Exit(2)
 	}
 
@@ -66,46 +59,13 @@ func main() {
 		os.Exit(2)
 	}
 
-	authMode = strings.ToLower(strings.TrimSpace(authMode))
-	if authMode == "" {
-		authMode = "auto"
-	}
-	if authMode != "auto" && authMode != "token" && authMode != "api" {
-		fmt.Fprintln(os.Stderr, "-auth-mode must be one of: auto, token, api")
-		os.Exit(2)
-	}
-
-	selectedAuthMode := authMode
-	if selectedAuthMode == "auto" {
-		if accessToken != "" {
-			selectedAuthMode = "token"
-		} else {
-			selectedAuthMode = "api"
-		}
-	}
-
 	resourceID = strings.TrimSpace(resourceID)
-	opts := []doubaospeech.Option{doubaospeech.WithUserID("voice-clone-example")}
+	opts := []doubaospeech.Option{
+		doubaospeech.WithUserID("voice-clone-example"),
+		doubaospeech.WithAPIKey(apiKey),
+	}
 	if resourceID != "" {
 		opts = append(opts, doubaospeech.WithResourceID(resourceID))
-	}
-
-	switch selectedAuthMode {
-	case "token":
-		if accessToken == "" {
-			fmt.Fprintln(os.Stderr, "-auth-mode=token requires DOUBAO_TOKEN or DOUBAO_ACCESS_KEY")
-			os.Exit(2)
-		}
-		opts = append(opts, doubaospeech.WithBearerToken(accessToken))
-	case "api":
-		if apiKey == "" {
-			fmt.Fprintln(os.Stderr, "-auth-mode=api requires DOUBAO_API_KEY")
-			os.Exit(2)
-		}
-		opts = append(opts, doubaospeech.WithAPIKey(apiKey))
-	default:
-		fmt.Fprintln(os.Stderr, "unexpected auth mode")
-		os.Exit(2)
 	}
 
 	if timeoutSec <= 0 {

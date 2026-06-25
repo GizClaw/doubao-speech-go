@@ -32,20 +32,15 @@ func main() {
 	}
 
 	appID := firstEnv("DOUBAO_APP_ID", "DOUBAO_REALTIME_APP_ID")
-	accessKey := firstEnv("DOUBAO_ACCESS_KEY", "DOUBAO_REALTIME_ACCESS_KEY")
 	apiKey := firstEnv("DOUBAO_API_KEY")
-	if apiKey == "" && (appID == "" || accessKey == "") {
-		fatalf("set DOUBAO_API_KEY, or DOUBAO_APP_ID/DOUBAO_ACCESS_KEY")
+	if appID == "" || apiKey == "" {
+		fatalf("set DOUBAO_APP_ID and DOUBAO_API_KEY")
 	}
 
 	opts := []doubaospeech.Option{
 		doubaospeech.WithResourceID(doubaospeech.ResourceASTTranslate),
 		doubaospeech.WithUserID("example-ast-translate-user"),
-	}
-	if apiKey != "" {
-		opts = append(opts, doubaospeech.WithAPIKey(apiKey))
-	} else {
-		opts = append(opts, doubaospeech.WithV2APIKey(accessKey, ""))
+		doubaospeech.WithAPIKey(apiKey),
 	}
 
 	client := doubaospeech.NewClient(appID, opts...)
