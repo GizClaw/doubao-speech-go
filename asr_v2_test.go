@@ -96,7 +96,7 @@ func (d *fakeDialer) DialContext(_ context.Context, url string, requestHeader ht
 }
 
 func TestOpenStreamSessionSendsStartFrame(t *testing.T) {
-	client := NewClient("test-app", WithV2APIKey("test-ak", "test-app"), WithUserID("tester"))
+	client := NewClient(WithAppID("test-app", "test-ak", "test-app"), WithUserID("tester"))
 	conn := newFakeWSConn()
 	dialer := &fakeDialer{conn: conn}
 
@@ -142,7 +142,7 @@ func TestOpenStreamSessionSendsStartFrame(t *testing.T) {
 }
 
 func TestOpenStreamSessionAuthFailureErrorStructure(t *testing.T) {
-	client := NewClient("test-app", WithV2APIKey("bad-ak", "test-app"), WithUserID("tester"))
+	client := NewClient(WithAppID("test-app", "bad-ak", "test-app"), WithUserID("tester"))
 
 	dialer := &fakeDialer{
 		err: errors.New("bad handshake"),
@@ -189,7 +189,7 @@ func TestOpenStreamSessionAuthFailureErrorStructure(t *testing.T) {
 }
 
 func TestSendAudioBoundary(t *testing.T) {
-	client := NewClient("test-app", WithV2APIKey("test-ak", "test-app"))
+	client := NewClient(WithAppID("test-app", "test-ak", "test-app"))
 	conn := newFakeWSConn()
 
 	svc := newASRServiceV2(client)
@@ -211,7 +211,7 @@ func TestSendAudioBoundary(t *testing.T) {
 }
 
 func TestRecvResultAndError(t *testing.T) {
-	client := NewClient("test-app", WithV2APIKey("test-ak", "test-app"))
+	client := NewClient(WithAppID("test-app", "test-ak", "test-app"))
 	conn := newFakeWSConn()
 
 	svc := newASRServiceV2(client)

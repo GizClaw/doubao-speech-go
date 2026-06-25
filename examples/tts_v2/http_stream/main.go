@@ -46,10 +46,6 @@ func main() {
 		appKey = appID
 	}
 
-	if appID == "" {
-		fmt.Fprintln(os.Stderr, "missing environment variable DOUBAO_APP_ID")
-		os.Exit(2)
-	}
 	authMode = strings.ToLower(strings.TrimSpace(authMode))
 	if authMode == "" {
 		authMode = "auto"
@@ -99,7 +95,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, "-auth-mode=access requires DOUBAO_ACCESS_KEY or DOUBAO_TOKEN")
 			os.Exit(2)
 		}
-		opts = append(opts, doubaospeech.WithV2APIKey(accessKey, appKey))
+		if appID == "" {
+			fmt.Fprintln(os.Stderr, "-auth-mode=access requires DOUBAO_APP_ID")
+			os.Exit(2)
+		}
+		opts = append(opts, doubaospeech.WithAppID(appID, accessKey, appKey))
 	case "api":
 		if apiKey == "" {
 			fmt.Fprintln(os.Stderr, "-auth-mode=api requires DOUBAO_API_KEY")
@@ -113,7 +113,7 @@ func main() {
 
 	fmt.Printf("using auth mode=%s resource_id=%s speaker=%s\n", selectedAuthMode, resourceID, speaker)
 
-	client := doubaospeech.NewClient(appID, opts...)
+	client := doubaospeech.NewClient(opts...)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
 	defer cancel()

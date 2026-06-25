@@ -37,13 +37,12 @@ Not covered in this single example (recommended scenarios):
 
 ## Requirements
 
-- `DOUBAO_APP_ID` or `DOUBAO_REALTIME_APP_ID` (required)
 - `DOUBAO_API_KEY`/`DOUBAO_REALTIME_API_KEY` (recommended) **or** `DOUBAO_ACCESS_KEY`/`DOUBAO_REALTIME_ACCESS_KEY`
+- `DOUBAO_APP_ID` or `DOUBAO_REALTIME_APP_ID` (required only for app-id/access-key auth)
 
 ## Run
 
 ```bash
-DOUBAO_APP_ID=<your_app_id> \
 DOUBAO_API_KEY=<your_api_key> \
 go run ./examples/realtime -mode text -model 1.2.1.1
 ```

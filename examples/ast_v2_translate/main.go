@@ -45,10 +45,10 @@ func main() {
 	if apiKey != "" {
 		opts = append(opts, doubaospeech.WithAPIKey(apiKey))
 	} else {
-		opts = append(opts, doubaospeech.WithV2APIKey(accessKey, ""))
+		opts = append(opts, doubaospeech.WithAppID(appID, accessKey, ""))
 	}
 
-	client := doubaospeech.NewClient(appID, opts...)
+	client := doubaospeech.NewClient(opts...)
 	cfg := doubaospeech.DefaultASTTranslateConfig()
 	cfg.Mode = doubaospeech.ASTTranslateMode(*mode)
 	cfg.SourceLanguage = *sourceLang

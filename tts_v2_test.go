@@ -72,8 +72,7 @@ func TestTTSV2HTTPStreamChunkSequenceAndFinalFrame(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(
-		"app-test",
-		WithV2APIKey("ak-test", "app-test"),
+		WithAppID("app-test", "ak-test", "app-test"),
 		WithBaseURL(server.URL),
 		WithUserID("stream-user"),
 	)
@@ -177,8 +176,7 @@ func TestTTSV2HTTPStreamOnlyFinalFrame(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(
-		"app-test",
-		WithV2APIKey("ak-test", "app-test"),
+		WithAppID("app-test", "ak-test", "app-test"),
 		WithBaseURL(server.URL),
 	)
 
@@ -208,8 +206,7 @@ func TestTTSV2HTTPStreamResourceSpeakerMismatchError(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(
-		"app-test",
-		WithV2APIKey("ak-test", "app-test"),
+		WithAppID("app-test", "ak-test", "app-test"),
 		WithBaseURL(server.URL),
 	)
 
@@ -250,8 +247,7 @@ func TestTTSV2HTTPStreamEOFWithoutFinalFrameReturnsError(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(
-		"app-test",
-		WithV2APIKey("ak-test", "app-test"),
+		WithAppID("app-test", "ak-test", "app-test"),
 		WithBaseURL(server.URL),
 	)
 

@@ -5,7 +5,6 @@ This example demonstrates `POST /api/v3/tts/unidirectional` streaming synthesis.
 ## Run with API Key
 
 ```bash
-DOUBAO_APP_ID=<your_app_id> \
 DOUBAO_API_KEY=<your_api_key> \
 go run ./examples/tts_v2/http_stream -auth-mode api -text "Hello from Doubao TTS" -output /tmp/tts_v2_output.mp3
 ```

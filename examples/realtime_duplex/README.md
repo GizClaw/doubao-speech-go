@@ -13,6 +13,7 @@ The example does not use PortAudio, microphone capture, playback, or `gopus`.
 ## Required environment
 
 ```bash
+# Required only when using access-key credentials.
 export DOUBAO_APP_ID=<your_app_id>
 
 # Existing Realtime API credentials.
@@ -20,17 +21,23 @@ export DOUBAO_REALTIME_API_KEY=<your_realtime_api_key>
 # or:
 export DOUBAO_REALTIME_ACCESS_KEY=<your_realtime_access_key>
 
-# Duplex API credentials.
+# Duplex API credentials. Omit this when the Realtime key is shared.
 export DOUBAO_DUPLEX_API_KEY=<your_duplex_api_key>
+# or:
+export DOUBAO_DUPLEX_ACCESS_KEY=<your_duplex_access_key>
 
-# ASR SAUC credentials.
+# ASR SAUC credentials. Omit these when the Realtime key is shared.
 export DOUBAO_ASR_API_KEY=<your_asr_api_key>
 # or:
 export DOUBAO_ASR_ACCESS_KEY=<your_asr_access_key>
 ```
 
-`DOUBAO_API_KEY` and `DOUBAO_ACCESS_KEY` are accepted as fallbacks for the
-service-specific variables.
+`DOUBAO_API_KEY` / `DOUBAO_ACCESS_KEY` are accepted as shared fallbacks. The
+example also falls back to `DOUBAO_REALTIME_API_KEY` or
+`DOUBAO_REALTIME_ACCESS_KEY` when the same credential is valid for all three
+services. API keys are sent as `X-Api-Key`; access-key credentials are sent as
+the standard App ID + access key + secret key headers. The protocol header for
+the secret key is `X-Api-App-Key`.
 
 ## Run
 

@@ -336,7 +336,13 @@ func buildRealtimeDuplexHeaders(cfg *clientConfig) http.Header {
 	case cfg.accessToken != "":
 		headers.Set("Authorization", "Bearer "+cfg.accessToken)
 	case cfg.accessKey != "":
-		headers.Set("X-Api-Key", cfg.accessKey)
+		headers.Set("X-Api-Access-Key", cfg.accessKey)
+		if cfg.appID != "" {
+			headers.Set("X-Api-App-Id", cfg.appID)
+		}
+		if cfg.appKey != "" {
+			headers.Set("X-Api-App-Key", cfg.appKey)
+		}
 	}
 	return headers
 }

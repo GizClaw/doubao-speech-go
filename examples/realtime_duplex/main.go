@@ -34,6 +34,7 @@ type exampleConfig struct {
 	RealtimeKey string
 	RealtimeAK  string
 	DuplexKey   string
+	DuplexAK    string
 	ASRKey      string
 	ASRAK       string
 }
@@ -84,6 +85,7 @@ func run(args []string) error {
 	duplexCfg.Session.Instructions = duplexInstructions()
 	duplexCfg.Session.Audio.Output.Voice = cfg.DuplexVoice
 	duplexCfg.Session.Tools = demoTools()
+	duplexCfg.Extension = demoDuplexExtension()
 
 	duplexSession, err := clients.duplex.RealtimeDuplex.OpenSession(ctx, &duplexCfg)
 	if err != nil {
@@ -92,7 +94,7 @@ func run(args []string) error {
 	defer duplexSession.Close()
 	fmt.Printf("[setup] duplex session=%s log_id=%s\n", duplexSession.SessionID(), duplexSession.LogID())
 
-	prompt := "Please say in Chinese: 请调用 lookup_weather 工具查询深圳今天的天气，然后用一句话回答。"
+	prompt := `Please say exactly this Chinese sentence, without answering it or adding anything else: 请调用 lookup_weather 工具查询深圳今天的天气，然后用一句话回答。`
 	for round := 1; round <= cfg.Rounds; round++ {
 		turnCtx, cancel := context.WithTimeout(ctx, cfg.TurnTimeout)
 		fmt.Printf("\n[round %d][old.prompt] %s\n", round, prompt)
@@ -158,24 +160,33 @@ func parseConfig(args []string) (exampleConfig, error) {
 	cfg.AppID = firstNonEmpty(os.Getenv("DOUBAO_APP_ID"), os.Getenv("DOUBAO_REALTIME_APP_ID"))
 	cfg.RealtimeKey = firstNonEmpty(os.Getenv("DOUBAO_REALTIME_API_KEY"), os.Getenv("DOUBAO_API_KEY"))
 	cfg.RealtimeAK = firstNonEmpty(os.Getenv("DOUBAO_REALTIME_ACCESS_KEY"), os.Getenv("DOUBAO_ACCESS_KEY"))
-	cfg.DuplexKey = firstNonEmpty(os.Getenv("DOUBAO_DUPLEX_API_KEY"), os.Getenv("DOUBAO_API_KEY"))
-	cfg.ASRKey = firstNonEmpty(os.Getenv("DOUBAO_ASR_API_KEY"), os.Getenv("DOUBAO_API_KEY"))
-	cfg.ASRAK = firstNonEmpty(os.Getenv("DOUBAO_ASR_ACCESS_KEY"), os.Getenv("DOUBAO_ACCESS_KEY"))
+	cfg.DuplexKey = firstNonEmpty(
+		os.Getenv("DOUBAO_DUPLEX_API_KEY"),
+		os.Getenv("DOUBAO_API_KEY"),
+		os.Getenv("DOUBAO_REALTIME_API_KEY"),
+	)
+	cfg.DuplexAK = firstNonEmpty(os.Getenv("DOUBAO_DUPLEX_ACCESS_KEY"), os.Getenv("DOUBAO_ACCESS_KEY"), os.Getenv("DOUBAO_REALTIME_ACCESS_KEY"))
+	cfg.ASRKey = firstNonEmpty(
+		os.Getenv("DOUBAO_ASR_API_KEY"),
+		os.Getenv("DOUBAO_API_KEY"),
+		os.Getenv("DOUBAO_REALTIME_API_KEY"),
+	)
+	cfg.ASRAK = firstNonEmpty(os.Getenv("DOUBAO_ASR_ACCESS_KEY"), os.Getenv("DOUBAO_ACCESS_KEY"), os.Getenv("DOUBAO_REALTIME_ACCESS_KEY"))
 	return cfg, validateConfig(cfg)
 }
 
 func validateConfig(cfg exampleConfig) error {
-	if cfg.AppID == "" {
-		return errors.New("DOUBAO_APP_ID or DOUBAO_REALTIME_APP_ID is required")
-	}
 	if cfg.RealtimeKey == "" && cfg.RealtimeAK == "" {
 		return errors.New("DOUBAO_REALTIME_API_KEY/DOUBAO_API_KEY or DOUBAO_REALTIME_ACCESS_KEY/DOUBAO_ACCESS_KEY is required")
 	}
-	if cfg.DuplexKey == "" {
-		return errors.New("DOUBAO_DUPLEX_API_KEY or DOUBAO_API_KEY is required")
+	if cfg.DuplexKey == "" && cfg.DuplexAK == "" {
+		return errors.New("DOUBAO_DUPLEX_API_KEY/DOUBAO_API_KEY or DOUBAO_DUPLEX_ACCESS_KEY/shared access key is required")
 	}
 	if cfg.ASRKey == "" && cfg.ASRAK == "" {
 		return errors.New("DOUBAO_ASR_API_KEY/DOUBAO_API_KEY or DOUBAO_ASR_ACCESS_KEY/DOUBAO_ACCESS_KEY is required")
+	}
+	if cfg.AppID == "" && (cfg.RealtimeAK != "" || cfg.DuplexAK != "" || cfg.ASRAK != "") {
+		return errors.New("DOUBAO_APP_ID or DOUBAO_REALTIME_APP_ID is required for app-id auth")
 	}
 	return nil
 }
@@ -188,7 +199,7 @@ func newClients(cfg exampleConfig) (*clients, error) {
 	if cfg.RealtimeKey != "" {
 		realtimeOpts = append(realtimeOpts, doubaospeech.WithAPIKey(cfg.RealtimeKey))
 	} else {
-		realtimeOpts = append(realtimeOpts, doubaospeech.WithRealtimeAPIKey(cfg.RealtimeAK, doubaospeech.AppKeyRealtime))
+		realtimeOpts = append(realtimeOpts, doubaospeech.WithAppID(cfg.AppID, cfg.RealtimeAK, doubaospeech.AppKeyRealtime))
 	}
 
 	asrOpts := []doubaospeech.Option{
@@ -198,20 +209,27 @@ func newClients(cfg exampleConfig) (*clients, error) {
 	if cfg.ASRKey != "" {
 		asrOpts = append(asrOpts, doubaospeech.WithAPIKey(cfg.ASRKey))
 	} else {
-		asrOpts = append(asrOpts, doubaospeech.WithV2APIKey(cfg.ASRAK, cfg.AppID))
+		asrOpts = append(asrOpts, doubaospeech.WithAppID(cfg.AppID, cfg.ASRAK, cfg.AppID))
+	}
+
+	duplexOpts := []doubaospeech.Option{doubaospeech.WithUserID("example-realtime-duplex")}
+	if cfg.DuplexKey != "" {
+		duplexOpts = append(duplexOpts, doubaospeech.WithAPIKey(cfg.DuplexKey))
+	} else {
+		duplexOpts = append(duplexOpts, doubaospeech.WithAppID(cfg.AppID, cfg.DuplexAK, doubaospeech.AppKeyRealtime))
 	}
 
 	return &clients{
-		realtime: doubaospeech.NewClient(cfg.AppID, realtimeOpts...),
-		duplex:   doubaospeech.NewClient(cfg.AppID, doubaospeech.WithAPIKey(cfg.DuplexKey)),
-		asr:      doubaospeech.NewClient(cfg.AppID, asrOpts...),
+		realtime: doubaospeech.NewClient(realtimeOpts...),
+		duplex:   doubaospeech.NewClient(duplexOpts...),
+		asr:      doubaospeech.NewClient(asrOpts...),
 	}, nil
 }
 
 func runOldRealtimeTurn(ctx context.Context, client *doubaospeech.Client, cfg exampleConfig, prompt string) (oldTurnResult, error) {
 	rtCfg := doubaospeech.DefaultRealtimeConfig()
 	rtCfg.TTS.Speaker = cfg.OldSpeaker
-	rtCfg.TTS.AudioConfig.Format = doubaospeech.FormatPCM
+	rtCfg.TTS.AudioConfig.Format = doubaospeech.FormatPCMS16LE
 	rtCfg.TTS.AudioConfig.SampleRate = doubaospeech.SampleRate16000
 	rtCfg.TTS.AudioConfig.Bits = 16
 	rtCfg.InputMode = doubaospeech.RealtimeInputModeText
@@ -219,7 +237,7 @@ func runOldRealtimeTurn(ctx context.Context, client *doubaospeech.Client, cfg ex
 	rtCfg.EventBuffer = 1024
 	rtCfg.BackpressureTimeout = 30 * time.Second
 	rtCfg.Prompt = doubaospeech.RealtimePromptConfig{
-		System: "You are the first assistant in an integration smoke test. Speak exactly the user-requested sentence, without extra explanation.",
+		System: "You are the first assistant in an integration smoke test. Your only job is to speak exactly the requested sentence. Do not answer the requested sentence.",
 	}
 	rtCfg.Props = doubaospeech.RealtimeGenerationProps{Temperature: 0.1, TopP: 0.8, MaxTokens: 128}
 
@@ -269,6 +287,10 @@ func runDuplexTurn(ctx context.Context, session *doubaospeech.RealtimeDuplexSess
 	if err := session.CommitAudio(ctx); err != nil {
 		return duplexTurnResult{}, err
 	}
+
+	silenceCtx, stopSilence := context.WithCancel(ctx)
+	defer stopSilence()
+	go sendDuplexSilence(silenceCtx, session)
 
 	var result duplexTurnResult
 	for {
@@ -353,6 +375,20 @@ func transcribePCM(ctx context.Context, client *doubaospeech.Client, audio []byt
 	return strings.TrimSpace(lastText), nil
 }
 
+func sendDuplexSilence(ctx context.Context, session *doubaospeech.RealtimeDuplexSession) {
+	ticker := time.NewTicker(20 * time.Millisecond)
+	defer ticker.Stop()
+	silence := make([]byte, pcm16KChunkBytes)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			_ = session.SendAudio(ctx, silence)
+		}
+	}
+}
+
 func demoTools() []doubaospeech.RealtimeDuplexFunctionTool {
 	additionalProperties := false
 	return []doubaospeech.RealtimeDuplexFunctionTool{
@@ -367,6 +403,24 @@ func demoTools() []doubaospeech.RealtimeDuplexFunctionTool {
 				},
 				Required:             []string{"city"},
 				AdditionalProperties: &additionalProperties,
+			},
+		},
+	}
+}
+
+func demoDuplexExtension() *doubaospeech.RealtimeDuplexExtension {
+	return &doubaospeech.RealtimeDuplexExtension{
+		ASR: map[string]any{
+			"extra": map[string]any{},
+		},
+		TTS: map[string]any{
+			"extra": map[string]any{},
+		},
+		Dialog: map[string]any{
+			"extra": map[string]any{
+				"audit_response":       "抱歉，这个问题我无法回答，你可以换个其他话题。",
+				"enable_loudness_norm": true,
+				"enable_music":         false,
 			},
 		},
 	}
@@ -397,7 +451,7 @@ func duplexInstructions() string {
 
 func nextOldPrompt(round int, oldText string, duplexTranscript string) string {
 	return fmt.Sprintf(
-		"Please say in Chinese: 上一轮我说的是“%s”，对方回答的是“%s”。请继续要求对方调用 lookup_weather 工具，并让对方用一句话回答第 %d 轮结果。",
+		"Please say exactly this Chinese sentence, without answering it or adding anything else: 上一轮我说的是“%s”，对方回答的是“%s”。请继续要求对方调用 lookup_weather 工具，并让对方用一句话回答第 %d 轮结果。",
 		compactForPrompt(oldText),
 		compactForPrompt(duplexTranscript),
 		round+1,

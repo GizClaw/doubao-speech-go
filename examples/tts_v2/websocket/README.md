@@ -27,7 +27,6 @@ go run ./examples/tts_v2/websocket \
 If your tenant allows `x-api-key`, you can also try API key mode:
 
 ```bash
-DOUBAO_APP_ID=<your_app_id> \
 DOUBAO_API_KEY=<your_api_key> \
 go run ./examples/tts_v2/websocket
 ```
@@ -174,7 +173,8 @@ The current runnable sample demonstrates a regular single-speaker flow.
 
 - TTS V2 voice list (official): <https://www.volcengine.com/docs/6561/1257544>
 - TTS V2 WebSocket unidirectional (official): <https://www.volcengine.com/docs/6561/1719100>
-- TTS V2 WebSocket bidirectional (official): <https://www.volcengine.com/docs/6561/1329505>
+- TTS WebSocket bidirectional 1.0 (official): <https://www.volcengine.com/docs/6561/1329505>
+- TTS WebSocket bidirectional 2.0 (official): <https://www.volcengine.com/docs/6561/2532486>
 - ListSpeakers API (official, paginated source of truth): <https://www.volcengine.com/docs/6561/2160690>
 - Migration trace in this repo: `openteam/design_proposal.md`
 

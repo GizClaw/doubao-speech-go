@@ -12,7 +12,7 @@ import (
 )
 
 func TestRealtimeDuplexOpenSessionSendsCreate(t *testing.T) {
-	client := NewClient("test-app", WithAPIKey("test-key"))
+	client := NewClient(WithAPIKey("test-key"))
 	conn := newFakeWSConn()
 	dialer := &fakeDialer{
 		conn: conn,
@@ -96,6 +96,35 @@ func TestRealtimeDuplexOpenSessionSendsCreate(t *testing.T) {
 	}
 	if event.Session.Audio.Output.Format.Type != RealtimeDuplexAudioPCMS16LE {
 		t.Fatalf("output format = %q, want %s", event.Session.Audio.Output.Format.Type, RealtimeDuplexAudioPCMS16LE)
+	}
+}
+
+func TestRealtimeDuplexOpenSessionSendsAccessKeyHeaders(t *testing.T) {
+	client := NewClient(WithAppID("test-app", "test-ak", AppKeyRealtime))
+	conn := newFakeWSConn()
+	dialer := &fakeDialer{conn: conn}
+
+	svc := newRealtimeDuplexService(client)
+	svc.dialer = dialer
+	conn.enqueue(websocket.TextMessage, []byte(`{"type":"session.created","event_id":"evt-1","session":{"id":"session-from-server"}}`))
+
+	session, err := svc.OpenSession(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("OpenSession error = %v", err)
+	}
+	defer session.Close()
+
+	if got := dialer.headers.Get("X-Api-Access-Key"); got != "test-ak" {
+		t.Fatalf("X-Api-Access-Key = %q, want test-ak", got)
+	}
+	if got := dialer.headers.Get("X-Api-App-Id"); got != "test-app" {
+		t.Fatalf("X-Api-App-Id = %q, want test-app", got)
+	}
+	if got := dialer.headers.Get("X-Api-App-Key"); got != AppKeyRealtime {
+		t.Fatalf("X-Api-App-Key = %q, want %s", got, AppKeyRealtime)
+	}
+	if got := dialer.headers.Get("X-Api-Key"); got != "" {
+		t.Fatalf("X-Api-Key = %q, want empty", got)
 	}
 }
 
@@ -254,7 +283,7 @@ func TestRealtimeDuplexCloseIdempotent(t *testing.T) {
 func newOpenedRealtimeDuplexSessionForTest(t *testing.T) (*RealtimeDuplexSession, *fakeWSConn) {
 	t.Helper()
 
-	client := NewClient("test-app", WithAPIKey("test-key"))
+	client := NewClient(WithAPIKey("test-key"))
 	conn := newFakeWSConn()
 	svc := newRealtimeDuplexService(client)
 	svc.dialer = &fakeDialer{conn: conn}

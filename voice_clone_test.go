@@ -14,7 +14,7 @@ import (
 )
 
 func TestVoiceCloneUploadValidation(t *testing.T) {
-	client := NewClient("app-test")
+	client := NewClient(WithAppID("app-test", "", ""))
 
 	tests := []struct {
 		name string
@@ -63,8 +63,8 @@ func TestVoiceCloneUploadSubmitFailure(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(
-		"app-test",
-		WithBearerToken("token-test"),
+		WithAppID("app-test", "", ""),
+		WithToken("token-test"),
 		WithBaseURL(server.URL),
 	)
 
@@ -190,8 +190,8 @@ func TestVoiceCloneUploadAndWaitSuccess(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(
-		"app-test",
-		WithBearerToken("token-test"),
+		WithAppID("app-test", "", ""),
+		WithToken("token-test"),
 		WithBaseURL(server.URL),
 	)
 
@@ -294,8 +294,8 @@ func TestVoiceCloneUploadAndWaitWithDifferentTaskAndSpeakerID(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(
-		"app-test",
-		WithBearerToken("token-test"),
+		WithAppID("app-test", "", ""),
+		WithToken("token-test"),
 		WithBaseURL(server.URL),
 	)
 
@@ -354,8 +354,8 @@ func TestVoiceCloneTaskWaitUnknownStatusRetainsRawValue(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(
-		"app-test",
-		WithBearerToken("token-test"),
+		WithAppID("app-test", "", ""),
+		WithToken("token-test"),
 		WithBaseURL(server.URL),
 	)
 
@@ -409,8 +409,8 @@ func TestVoiceCloneTaskWaitFailurePath(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(
-		"app-test",
-		WithBearerToken("token-test"),
+		WithAppID("app-test", "", ""),
+		WithToken("token-test"),
 		WithBaseURL(server.URL),
 	)
 

@@ -18,7 +18,6 @@ func TestDoJSONRequestNon2xxMapsAPIError(t *testing.T) {
 	defer server.Close()
 
 	client := NewClient(
-		"app-test",
 		WithBaseURL(server.URL),
 		WithAPIKey("key-test"),
 	)
@@ -62,7 +61,6 @@ func (d *stubHTTPDoer) Do(req *http.Request) (*http.Response, error) {
 func TestWithHTTPTransportOverridesDefaultHTTPClient(t *testing.T) {
 	stub := &stubHTTPDoer{}
 	client := NewClient(
-		"app-test",
 		WithBaseURL("https://example.com"),
 		WithAPIKey("key-test"),
 		WithHTTPTransport(stub),

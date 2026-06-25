@@ -13,7 +13,7 @@ import (
 )
 
 func TestRealtimeOpenSessionSendsLifecycleFrames(t *testing.T) {
-	client := NewClient("test-app", WithV2APIKey("test-ak", AppKeyRealtime), WithUserID("tester"))
+	client := NewClient(WithAppID("test-app", "test-ak", AppKeyRealtime), WithUserID("tester"))
 	conn := newFakeWSConn()
 	dialer := &fakeDialer{conn: conn}
 
@@ -553,7 +553,7 @@ func TestRealtimeOpenCloseLoopCleansReceiveLoop(t *testing.T) {
 func newOpenedRealtimeSessionForTest(t *testing.T, cfg *RealtimeConfig) (*RealtimeSession, *fakeWSConn) {
 	t.Helper()
 
-	client := NewClient("test-app", WithV2APIKey("test-ak", AppKeyRealtime), WithUserID("tester"))
+	client := NewClient(WithAppID("test-app", "test-ak", AppKeyRealtime), WithUserID("tester"))
 	conn := newFakeWSConn()
 	dialer := &fakeDialer{conn: conn}
 

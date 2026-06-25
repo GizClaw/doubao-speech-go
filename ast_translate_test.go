@@ -12,7 +12,7 @@ import (
 )
 
 func TestASTTranslateOpenSessionSendsStartRequest(t *testing.T) {
-	client := NewClient("test-app", WithV2APIKey("test-ak", "test-app"), WithUserID("tester"))
+	client := NewClient(WithAppID("test-app", "test-ak", "test-app"), WithUserID("tester"))
 	conn := newFakeWSConn()
 	conn.enqueue(websocket.BinaryMessage, mustBuildASTResponse(t, &astproto.TranslateResponse{
 		ResponseMeta: &astproto.ResponseMeta{SessionID: "session-1", StatusCode: astproto.StatusSuccess},
@@ -73,7 +73,7 @@ func TestASTTranslateOpenSessionSendsStartRequest(t *testing.T) {
 }
 
 func TestASTTranslateS2SSendsTargetAudio(t *testing.T) {
-	client := NewClient("test-app", WithV2APIKey("test-ak", "test-app"), WithUserID("tester"))
+	client := NewClient(WithAppID("test-app", "test-ak", "test-app"), WithUserID("tester"))
 	conn := newFakeWSConn()
 	conn.enqueue(websocket.BinaryMessage, mustBuildASTResponse(t, &astproto.TranslateResponse{
 		ResponseMeta: &astproto.ResponseMeta{SessionID: "session-1", StatusCode: astproto.StatusSuccess},
@@ -105,7 +105,7 @@ func TestASTTranslateS2SSendsTargetAudio(t *testing.T) {
 }
 
 func TestASTTranslateStartRequestIncludesOptionalParams(t *testing.T) {
-	client := NewClient("test-app", WithV2APIKey("test-ak", "test-app"), WithUserID("tester"))
+	client := NewClient(WithAppID("test-app", "test-ak", "test-app"), WithUserID("tester"))
 	conn := newFakeWSConn()
 	conn.enqueue(websocket.BinaryMessage, mustBuildASTResponse(t, &astproto.TranslateResponse{
 		ResponseMeta: &astproto.ResponseMeta{SessionID: "session-1", StatusCode: astproto.StatusSuccess},
@@ -145,7 +145,7 @@ func TestASTTranslateStartRequestIncludesOptionalParams(t *testing.T) {
 }
 
 func TestASTTranslateOpenSessionUnexpectedStartResponseClosesPromptly(t *testing.T) {
-	client := NewClient("test-app", WithV2APIKey("test-ak", "test-app"), WithUserID("tester"))
+	client := NewClient(WithAppID("test-app", "test-ak", "test-app"), WithUserID("tester"))
 	conn := newFakeWSConn()
 	conn.enqueue(websocket.BinaryMessage, mustBuildASTResponse(t, &astproto.TranslateResponse{
 		ResponseMeta: &astproto.ResponseMeta{SessionID: "session-1", StatusCode: astproto.StatusSuccess},
@@ -354,7 +354,7 @@ func TestASTTranslateCloseIdempotentAndRaceSafe(t *testing.T) {
 func newOpenedASTTranslateSessionForTest(t *testing.T, cfg *ASTTranslateConfig) (*ASTTranslateSession, *fakeWSConn) {
 	t.Helper()
 
-	client := NewClient("test-app", WithV2APIKey("test-ak", "test-app"), WithUserID("tester"))
+	client := NewClient(WithAppID("test-app", "test-ak", "test-app"), WithUserID("tester"))
 	conn := newFakeWSConn()
 	dialer := &fakeDialer{conn: conn}
 	svc := newASTTranslateService(client)

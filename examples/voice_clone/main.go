@@ -85,7 +85,10 @@ func main() {
 	}
 
 	resourceID = strings.TrimSpace(resourceID)
-	opts := []doubaospeech.Option{doubaospeech.WithUserID("voice-clone-example")}
+	opts := []doubaospeech.Option{
+		doubaospeech.WithAppID(appID, "", ""),
+		doubaospeech.WithUserID("voice-clone-example"),
+	}
 	if resourceID != "" {
 		opts = append(opts, doubaospeech.WithResourceID(resourceID))
 	}
@@ -96,7 +99,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "-auth-mode=token requires DOUBAO_TOKEN or DOUBAO_ACCESS_KEY")
 			os.Exit(2)
 		}
-		opts = append(opts, doubaospeech.WithBearerToken(accessToken))
+		opts = append(opts, doubaospeech.WithToken(accessToken))
 	case "api":
 		if apiKey == "" {
 			fmt.Fprintln(os.Stderr, "-auth-mode=api requires DOUBAO_API_KEY")
@@ -115,7 +118,7 @@ func main() {
 		pollInterval = 2000
 	}
 
-	client := doubaospeech.NewClient(appID, opts...)
+	client := doubaospeech.NewClient(opts...)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
 	defer cancel()
