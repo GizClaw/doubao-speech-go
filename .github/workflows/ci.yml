@@ -20,6 +20,15 @@ jobs:
           go-version-file: go.mod
           cache: true
 
+      - name: Modernize check
+        shell: bash
+        run: |
+          diff_output="$(go fix -diff ./...)"
+          if [[ -n "$diff_output" ]]; then
+            printf '%s\n' "$diff_output"
+            exit 1
+          fi
+
       - name: Build (exclude examples)
         shell: bash
         run: |
