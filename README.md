@@ -12,6 +12,7 @@ Go SDK for Doubao/Volc speech APIs.
 - TTS V2 HTTP stream
 - TTS V2 WebSocket (unidirectional/bidirectional flows)
 - Realtime session API
+- Realtime duplex dialogue API
 - AST V2 realtime translation
 - Voice clone upload + polling workflow
 
@@ -53,7 +54,7 @@ go run ./examples/voice_clone -speaker-id <speaker_id> -audio /path/to/sample.wa
 Format:
 
 ```bash
-gofmt -w *.go internal/astproto/*.go internal/auth/*.go internal/protocol/*.go internal/transport/*.go internal/util/*.go examples/asr_v2_sauc_ws/*.go examples/ast_v2_translate/*.go examples/realtime/*.go examples/tts_v2/http_stream/*.go examples/tts_v2/websocket/*.go examples/voice_clone/*.go
+gofmt -w *.go internal/astproto/*.go internal/auth/*.go internal/protocol/*.go internal/transport/*.go internal/util/*.go examples/asr_v2_sauc_ws/*.go examples/ast_v2_translate/*.go examples/realtime/*.go examples/realtime_duplex/*.go examples/tts_v2/http_stream/*.go examples/tts_v2/websocket/*.go examples/voice_clone/*.go
 ```
 
 Build / test / vet:
@@ -75,6 +76,7 @@ go test . -run TestVoiceCloneUploadAndWaitSuccess -count=1 -v
 - `docs/asr_v2_sauc_ws.md`
 - `docs/ast_v2_translate.md`
 - `docs/realtime.md`
+- `docs/realtime_duplex_dialogue.md`
 - `docs/tts_v2_http_stream.md`
 - `docs/tts_v2_websocket.md`
 - `docs/voice_clone.md`

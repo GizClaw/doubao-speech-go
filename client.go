@@ -54,6 +54,9 @@ type Client struct {
 	// Realtime dialogue.
 	Realtime *RealtimeService
 
+	// Realtime duplex dialogue.
+	RealtimeDuplex *RealtimeDuplexService
+
 	// AST realtime translation.
 	ASTTranslate *ASTTranslateService
 	AST          *ASTTranslateService
@@ -111,6 +114,7 @@ func NewClient(appID string, opts ...Option) *Client {
 	c.ASRV2 = asrV2
 	c.VoiceClone = voiceClone
 	c.Realtime = newRealtimeService(c)
+	c.RealtimeDuplex = newRealtimeDuplexService(c)
 	astTranslate := newASTTranslateService(c)
 	c.ASTTranslate = astTranslate
 	c.AST = astTranslate
