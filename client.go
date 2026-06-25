@@ -55,6 +55,10 @@ type Client struct {
 	ASTTranslate *ASTTranslateService
 	AST          *ASTTranslateService
 
+	// Audio generation.
+	AudioGeneration *AudioGenerationService
+	Audio           *AudioGenerationService
+
 	// TTS V2 WebSocket synthesis.
 	TTS   *TTSServiceV2
 	TTSV2 *TTSServiceV2
@@ -109,6 +113,9 @@ func NewClient(appID string, opts ...Option) *Client {
 	astTranslate := newASTTranslateService(c)
 	c.ASTTranslate = astTranslate
 	c.AST = astTranslate
+	audioGeneration := newAudioGenerationService(c)
+	c.AudioGeneration = audioGeneration
+	c.Audio = audioGeneration
 	c.TTS = ttsV2
 	c.TTSV2 = ttsV2
 

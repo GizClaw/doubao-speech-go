@@ -15,6 +15,7 @@ Go SDK for Doubao/Volc speech APIs.
 - Realtime duplex dialogue API
 - AST V2 realtime translation
 - Voice clone upload + polling workflow
+- Audio Generation HTTP API
 
 ## Roadmap
 
@@ -27,6 +28,7 @@ Implemented:
 - [x] Realtime speech 1.0: `Realtime.OpenSession` supports text/audio input modes, push-to-talk, client interrupt, TTS text injection, parsed ASR/TTS/chat events, and conversation state helpers.
 - [x] Realtime full-duplex: `RealtimeDuplex.OpenSession` supports JSON text-frame sessions, audio append/commit, speech-text replacement, response cancel, context CRUD, function-calling results, and streamed output events.
 - [x] AST simultaneous interpretation: `ASTTranslate.OpenSession` supports S2T/S2S start, audio `TaskRequest`, `UpdateConfig`, `FinishSession`, parsed subtitle/TTS/usage/muted events, and protobuf transport.
+- [x] Audio generation: `AudioGeneration.Create` implements `POST /api/v3/tts/create` with text prompts, speaker/audio/image references, typed audio config, watermark options, decoded audio bytes, and temporary audio URL response fields.
 
 Partially implemented:
 
@@ -38,7 +40,6 @@ Partially implemented:
 
 Planned:
 
-- [ ] Audio generation: implement `POST /api/v3/tts/create` from `docs/audio_generation.md`.
 - [ ] Voice clone v3: add a typed client for `POST /api/v3/tts/voice_clone` and map its `speaker_status`, `model_type`, and demo-audio response.
 - [ ] ASR optimized/nostream modes: add typed selection for `bigmodel_async` and `bigmodel_nostream`, including final-packet semantics and language/options coverage.
 - [ ] TTS single-direction WebSocket and SSE stream helpers.
@@ -82,7 +83,7 @@ go run ./examples/voice_clone -speaker-id <speaker_id> -audio /path/to/sample.wa
 Format:
 
 ```bash
-gofmt -w *.go internal/astproto/*.go internal/auth/*.go internal/protocol/*.go internal/transport/*.go internal/util/*.go examples/asr_v2_sauc_ws/*.go examples/ast_v2_translate/*.go examples/realtime/*.go examples/realtime_duplex/*.go examples/tts_v2/http_stream/*.go examples/tts_v2/websocket/*.go examples/voice_clone/*.go
+gofmt -w *.go internal/astproto/*.go internal/auth/*.go internal/protocol/*.go internal/transport/*.go internal/util/*.go examples/asr_v2_sauc_ws/*.go examples/ast_v2_translate/*.go examples/audio_generation/*.go examples/realtime/*.go examples/realtime_duplex/*.go examples/tts_v2/http_stream/*.go examples/tts_v2/websocket/*.go examples/voice_clone/*.go
 ```
 
 Build / test / vet:
