@@ -10,11 +10,11 @@ examples/tts_v2/websocket/main.go
 
 ## Minimum run command
 
-Use either `DOUBAO_ACCESS_KEY` (or `DOUBAO_TOKEN`) **or** `DOUBAO_API_KEY`.
+The SDK only supports API key authentication.
 
 ```bash
 DOUBAO_APP_ID=<your_app_id> \
-DOUBAO_ACCESS_KEY=<your_access_key> \
+DOUBAO_API_KEY=<your_api_key> \
 go run ./examples/tts_v2/websocket \
   -text "hello from tts websocket example" \
   -speaker zh_female_xiaohe_uranus_bigtts \
@@ -23,16 +23,6 @@ go run ./examples/tts_v2/websocket \
   -sample-rate 24000 \
   -output ./tts_v2_ws_output.mp3
 ```
-
-If your tenant allows `x-api-key`, you can also try API key mode:
-
-```bash
-DOUBAO_API_KEY=<your_api_key> \
-go run ./examples/tts_v2/websocket
-```
-
-Some accounts may reject this mode with `Invalid X-Api-Key`.
-In that case, use `DOUBAO_ACCESS_KEY` (or `DOUBAO_TOKEN`) instead.
 
 ## Flags
 
@@ -58,7 +48,7 @@ This sample keeps a thin CLI surface like `examples/asr_v2_sauc_ws`, but adds op
 
 ```bash
 DOUBAO_APP_ID=<your_app_id> \
-DOUBAO_ACCESS_KEY=<your_access_key> \
+DOUBAO_API_KEY=<your_api_key> \
 go run ./examples/tts_v2/websocket \
   -segments "hello|this is segment two|final segment" \
   -sessions 2 \
@@ -74,7 +64,7 @@ Cancel flow example:
 
 ```bash
 DOUBAO_APP_ID=<your_app_id> \
-DOUBAO_ACCESS_KEY=<your_access_key> \
+DOUBAO_API_KEY=<your_api_key> \
 go run ./examples/tts_v2/websocket \
   -segments "hello|unused segment" \
   -cancel-first-session \

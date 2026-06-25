@@ -18,7 +18,7 @@ func TestTTSV2HTTPStreamChunkSequenceAndFinalFrame(t *testing.T) {
 		Method     string
 		Path       string
 		AppID      string
-		AccessKey  string
+		APIKey     string
 		ResourceID string
 		Body       ttsV2HTTPStreamRequest
 	}
@@ -39,7 +39,7 @@ func TestTTSV2HTTPStreamChunkSequenceAndFinalFrame(t *testing.T) {
 			Method:     r.Method,
 			Path:       r.URL.Path,
 			AppID:      r.Header.Get("X-Api-App-Id"),
-			AccessKey:  r.Header.Get("X-Api-Access-Key"),
+			APIKey:     r.Header.Get("X-Api-Key"),
 			ResourceID: r.Header.Get("X-Api-Resource-Id"),
 			Body:       body,
 		}
@@ -71,8 +71,8 @@ func TestTTSV2HTTPStreamChunkSequenceAndFinalFrame(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(
-		WithAppID("app-test", "ak-test", "app-test"),
+	client := NewClient("app-test",
+		WithAPIKey("key-test"),
 		WithBaseURL(server.URL),
 		WithUserID("stream-user"),
 	)
@@ -133,8 +133,8 @@ func TestTTSV2HTTPStreamChunkSequenceAndFinalFrame(t *testing.T) {
 	if captured.AppID != "app-test" {
 		t.Fatalf("X-Api-App-Id = %q, want %q", captured.AppID, "app-test")
 	}
-	if captured.AccessKey != "ak-test" {
-		t.Fatalf("X-Api-Access-Key = %q, want %q", captured.AccessKey, "ak-test")
+	if captured.APIKey != "key-test" {
+		t.Fatalf("X-Api-Key = %q, want %q", captured.APIKey, "key-test")
 	}
 	if captured.ResourceID != ResourceTTSV2 {
 		t.Fatalf("X-Api-Resource-Id = %q, want %q", captured.ResourceID, ResourceTTSV2)
@@ -175,8 +175,8 @@ func TestTTSV2HTTPStreamOnlyFinalFrame(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(
-		WithAppID("app-test", "ak-test", "app-test"),
+	client := NewClient("app-test",
+		WithAPIKey("key-test"),
 		WithBaseURL(server.URL),
 	)
 
@@ -205,8 +205,8 @@ func TestTTSV2HTTPStreamResourceSpeakerMismatchError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(
-		WithAppID("app-test", "ak-test", "app-test"),
+	client := NewClient("app-test",
+		WithAPIKey("key-test"),
 		WithBaseURL(server.URL),
 	)
 
@@ -246,8 +246,8 @@ func TestTTSV2HTTPStreamEOFWithoutFinalFrameReturnsError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(
-		WithAppID("app-test", "ak-test", "app-test"),
+	client := NewClient("app-test",
+		WithAPIKey("key-test"),
 		WithBaseURL(server.URL),
 	)
 

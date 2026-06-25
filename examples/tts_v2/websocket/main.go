@@ -78,32 +78,19 @@ func main() {
 	}
 
 	appID := os.Getenv("DOUBAO_APP_ID")
-	accessKey := os.Getenv("DOUBAO_ACCESS_KEY")
-	if accessKey == "" {
-		accessKey = os.Getenv("DOUBAO_TOKEN")
-	}
 	apiKey := os.Getenv("DOUBAO_API_KEY")
-
-	if accessKey == "" && apiKey == "" {
-		fmt.Fprintln(os.Stderr, "missing DOUBAO_ACCESS_KEY/DOUBAO_TOKEN or DOUBAO_API_KEY")
-		os.Exit(2)
-	}
-	if apiKey == "" && appID == "" {
-		fmt.Fprintln(os.Stderr, "missing environment variable DOUBAO_APP_ID for access-key auth")
+	if appID == "" || apiKey == "" {
+		fmt.Fprintln(os.Stderr, "missing DOUBAO_APP_ID or DOUBAO_API_KEY")
 		os.Exit(2)
 	}
 
 	opts := []doubaospeech.Option{
 		doubaospeech.WithResourceID(resourceID),
 		doubaospeech.WithUserID("example-user"),
-	}
-	if apiKey != "" {
-		opts = append(opts, doubaospeech.WithAPIKey(apiKey))
-	} else {
-		opts = append(opts, doubaospeech.WithAppID(appID, accessKey, appID))
+		doubaospeech.WithAPIKey(apiKey),
 	}
 
-	client := doubaospeech.NewClient(opts...)
+	client := doubaospeech.NewClient(appID, opts...)
 
 	if reuseConnection {
 		if err := runSequentialSessionsOnSingleConnection(

@@ -64,6 +64,7 @@ go get github.com/GizClaw/doubao-speech-go
 Run the ASR V2 example:
 
 ```bash
+DOUBAO_APP_ID=<your_app_id> \
 DOUBAO_API_KEY=<your_api_key> \
 go run ./examples/asr_v2_sauc_ws
 ```
@@ -72,7 +73,7 @@ Run the Voice Clone example:
 
 ```bash
 DOUBAO_APP_ID=<your_app_id> \
-DOUBAO_TOKEN=<your_token> \
+DOUBAO_API_KEY=<your_api_key> \
 go run ./examples/voice_clone -speaker-id <speaker_id> -audio /path/to/sample.wav
 ```
 

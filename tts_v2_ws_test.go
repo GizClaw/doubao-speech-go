@@ -33,7 +33,7 @@ func TestParseTTSV2WSFrameWithSequence(t *testing.T) {
 }
 
 func TestTTSV2WSSessionRecvAudioOnlyNoEvent(t *testing.T) {
-	client := NewClient(WithAppID("test-app", "test-ak", "test-app"), WithUserID("tester"))
+	client := NewClient("test-app", WithAPIKey("key-test"), WithUserID("tester"))
 	conn := newFakeWSConn()
 
 	svc := newTTSServiceV2(client)
@@ -87,7 +87,7 @@ func TestTTSV2WSSessionRecvAudioOnlyNoEvent(t *testing.T) {
 }
 
 func TestTTSV2WSSessionRecvErrorFrame(t *testing.T) {
-	client := NewClient(WithAppID("test-app", "test-ak", "test-app"), WithUserID("tester"))
+	client := NewClient("test-app", WithAPIKey("key-test"), WithUserID("tester"))
 	conn := newFakeWSConn()
 
 	svc := newTTSServiceV2(client)
@@ -133,7 +133,7 @@ func TestTTSV2WSSessionRecvErrorFrame(t *testing.T) {
 }
 
 func TestTTSV2WSSessionFailedEventUsesStatusCode(t *testing.T) {
-	client := NewClient(WithAppID("test-app", "test-ak", "test-app"), WithUserID("tester"))
+	client := NewClient("test-app", WithAPIKey("key-test"), WithUserID("tester"))
 	conn := newFakeWSConn()
 
 	svc := newTTSServiceV2(client)
@@ -205,7 +205,7 @@ func TestDecodeTTSV2WSChunkReturnsDiagnosticIDs(t *testing.T) {
 }
 
 func TestTTSV2WSSessionCancelSessionFlow(t *testing.T) {
-	client := NewClient(WithAppID("test-app", "test-ak", "test-app"), WithUserID("tester"))
+	client := NewClient("test-app", WithAPIKey("key-test"), WithUserID("tester"))
 	conn := newFakeWSConn()
 
 	svc := newTTSServiceV2(client)
@@ -263,7 +263,7 @@ func TestTTSV2WSSessionCancelSessionFlow(t *testing.T) {
 }
 
 func TestTTSV2WSSessionStartNextSessionSameConnection(t *testing.T) {
-	client := NewClient(WithAppID("test-app", "test-ak", "test-app"), WithUserID("tester"))
+	client := NewClient("test-app", WithAPIKey("key-test"), WithUserID("tester"))
 	conn := newFakeWSConn()
 
 	svc := newTTSServiceV2(client)

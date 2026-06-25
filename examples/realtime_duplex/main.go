@@ -32,11 +32,8 @@ type exampleConfig struct {
 	TurnTimeout time.Duration
 	AppID       string
 	RealtimeKey string
-	RealtimeAK  string
 	DuplexKey   string
-	DuplexAK    string
 	ASRKey      string
-	ASRAK       string
 }
 
 type clients struct {
@@ -159,34 +156,31 @@ func parseConfig(args []string) (exampleConfig, error) {
 	cfg.TurnTimeout = turnTimeout
 	cfg.AppID = firstNonEmpty(os.Getenv("DOUBAO_APP_ID"), os.Getenv("DOUBAO_REALTIME_APP_ID"))
 	cfg.RealtimeKey = firstNonEmpty(os.Getenv("DOUBAO_REALTIME_API_KEY"), os.Getenv("DOUBAO_API_KEY"))
-	cfg.RealtimeAK = firstNonEmpty(os.Getenv("DOUBAO_REALTIME_ACCESS_KEY"), os.Getenv("DOUBAO_ACCESS_KEY"))
 	cfg.DuplexKey = firstNonEmpty(
 		os.Getenv("DOUBAO_DUPLEX_API_KEY"),
 		os.Getenv("DOUBAO_API_KEY"),
 		os.Getenv("DOUBAO_REALTIME_API_KEY"),
 	)
-	cfg.DuplexAK = firstNonEmpty(os.Getenv("DOUBAO_DUPLEX_ACCESS_KEY"), os.Getenv("DOUBAO_ACCESS_KEY"), os.Getenv("DOUBAO_REALTIME_ACCESS_KEY"))
 	cfg.ASRKey = firstNonEmpty(
 		os.Getenv("DOUBAO_ASR_API_KEY"),
 		os.Getenv("DOUBAO_API_KEY"),
 		os.Getenv("DOUBAO_REALTIME_API_KEY"),
 	)
-	cfg.ASRAK = firstNonEmpty(os.Getenv("DOUBAO_ASR_ACCESS_KEY"), os.Getenv("DOUBAO_ACCESS_KEY"), os.Getenv("DOUBAO_REALTIME_ACCESS_KEY"))
 	return cfg, validateConfig(cfg)
 }
 
 func validateConfig(cfg exampleConfig) error {
-	if cfg.RealtimeKey == "" && cfg.RealtimeAK == "" {
-		return errors.New("DOUBAO_REALTIME_API_KEY/DOUBAO_API_KEY or DOUBAO_REALTIME_ACCESS_KEY/DOUBAO_ACCESS_KEY is required")
+	if cfg.AppID == "" {
+		return errors.New("DOUBAO_APP_ID or DOUBAO_REALTIME_APP_ID is required")
 	}
-	if cfg.DuplexKey == "" && cfg.DuplexAK == "" {
-		return errors.New("DOUBAO_DUPLEX_API_KEY/DOUBAO_API_KEY or DOUBAO_DUPLEX_ACCESS_KEY/shared access key is required")
+	if cfg.RealtimeKey == "" {
+		return errors.New("DOUBAO_REALTIME_API_KEY or DOUBAO_API_KEY is required")
 	}
-	if cfg.ASRKey == "" && cfg.ASRAK == "" {
-		return errors.New("DOUBAO_ASR_API_KEY/DOUBAO_API_KEY or DOUBAO_ASR_ACCESS_KEY/DOUBAO_ACCESS_KEY is required")
+	if cfg.DuplexKey == "" {
+		return errors.New("DOUBAO_DUPLEX_API_KEY or DOUBAO_API_KEY is required")
 	}
-	if cfg.AppID == "" && (cfg.RealtimeAK != "" || cfg.DuplexAK != "" || cfg.ASRAK != "") {
-		return errors.New("DOUBAO_APP_ID or DOUBAO_REALTIME_APP_ID is required for app-id auth")
+	if cfg.ASRKey == "" {
+		return errors.New("DOUBAO_ASR_API_KEY or DOUBAO_API_KEY is required")
 	}
 	return nil
 }
@@ -195,34 +189,24 @@ func newClients(cfg exampleConfig) (*clients, error) {
 	realtimeOpts := []doubaospeech.Option{
 		doubaospeech.WithResourceID(doubaospeech.ResourceRealtime),
 		doubaospeech.WithUserID("example-realtime-duplex-old"),
-	}
-	if cfg.RealtimeKey != "" {
-		realtimeOpts = append(realtimeOpts, doubaospeech.WithAPIKey(cfg.RealtimeKey))
-	} else {
-		realtimeOpts = append(realtimeOpts, doubaospeech.WithAppID(cfg.AppID, cfg.RealtimeAK, doubaospeech.AppKeyRealtime))
+		doubaospeech.WithAPIKey(cfg.RealtimeKey),
 	}
 
 	asrOpts := []doubaospeech.Option{
 		doubaospeech.WithResourceID(doubaospeech.ResourceASRStreamV2),
 		doubaospeech.WithUserID("example-realtime-duplex-asr"),
-	}
-	if cfg.ASRKey != "" {
-		asrOpts = append(asrOpts, doubaospeech.WithAPIKey(cfg.ASRKey))
-	} else {
-		asrOpts = append(asrOpts, doubaospeech.WithAppID(cfg.AppID, cfg.ASRAK, cfg.AppID))
+		doubaospeech.WithAPIKey(cfg.ASRKey),
 	}
 
-	duplexOpts := []doubaospeech.Option{doubaospeech.WithUserID("example-realtime-duplex")}
-	if cfg.DuplexKey != "" {
-		duplexOpts = append(duplexOpts, doubaospeech.WithAPIKey(cfg.DuplexKey))
-	} else {
-		duplexOpts = append(duplexOpts, doubaospeech.WithAppID(cfg.AppID, cfg.DuplexAK, doubaospeech.AppKeyRealtime))
+	duplexOpts := []doubaospeech.Option{
+		doubaospeech.WithUserID("example-realtime-duplex"),
+		doubaospeech.WithAPIKey(cfg.DuplexKey),
 	}
 
 	return &clients{
-		realtime: doubaospeech.NewClient(realtimeOpts...),
-		duplex:   doubaospeech.NewClient(duplexOpts...),
-		asr:      doubaospeech.NewClient(asrOpts...),
+		realtime: doubaospeech.NewClient(cfg.AppID, realtimeOpts...),
+		duplex:   doubaospeech.NewClient(cfg.AppID, duplexOpts...),
+		asr:      doubaospeech.NewClient(cfg.AppID, asrOpts...),
 	}, nil
 }
 

@@ -12,18 +12,21 @@ surface. This is the numeric-event, binary-frame realtime API exposed as
 wss://openspeech.bytedance.com/api/v3/realtime/dialogue
 ```
 
-Required upstream headers include:
-
-```http
-X-Api-Resource-Id: volc.speech.dialog
-X-Api-App-Key: PlgvMymc7f3tQnJ6
-```
-
-The SDK provides these constants:
+The SDK authenticates with the current public client shape:
 
 ```go
-doubaospeech.ResourceRealtime
-doubaospeech.AppKeyRealtime
+client := doubaospeech.NewClient(appID,
+	doubaospeech.WithAPIKey(apiKey),
+	doubaospeech.WithResourceID(doubaospeech.ResourceRealtime),
+)
+```
+
+The SDK sends these headers:
+
+```http
+X-Api-App-Id: <app-id>
+X-Api-Key: <api-key>
+X-Api-Resource-Id: volc.speech.dialog
 ```
 
 ## SDK Coverage
@@ -77,6 +80,7 @@ through the TTS audio configuration:
 ## Example
 
 ```bash
+DOUBAO_APP_ID=<your_app_id> \
 DOUBAO_API_KEY=<your_api_key> \
 go run ./examples/realtime -mode text -model 1.2.1.1
 ```

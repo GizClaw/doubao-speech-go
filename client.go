@@ -15,12 +15,6 @@ const (
 	defaultTimeout = 30 * time.Second
 )
 
-// V2/V3 fixed service secret keys (sent with the X-Api-App-Key header).
-const (
-	AppKeyRealtime = "PlgvMymc7f3tQnJ6"
-	AppKeyPodcast  = "aGjiRDfUWi"
-)
-
 // V2/V3 Resource IDs.
 const (
 	ResourceTTSV1        = "seed-tts-1.0"
@@ -69,11 +63,8 @@ type Client struct {
 }
 
 type clientConfig struct {
-	appID       string
-	accessKey   string // X-Api-Access-Key
-	accessToken string // Bearer token (fallback to X-Api-Access-Key)
-	appKey      string // secret key sent as X-Api-App-Key (defaults to appID)
-	apiKey      string // x-api-key
+	appID  string
+	apiKey string
 
 	cluster    string
 	resourceID string
@@ -89,8 +80,9 @@ type clientConfig struct {
 type Option func(*clientConfig)
 
 // NewClient creates an SDK client.
-func NewClient(opts ...Option) *Client {
+func NewClient(appID string, opts ...Option) *Client {
 	cfg := &clientConfig{
+		appID:   appID,
 		baseURL: defaultBaseURL,
 		wsURL:   defaultWSURL,
 		timeout: defaultTimeout,
@@ -123,62 +115,11 @@ func NewClient(opts ...Option) *Client {
 	return c
 }
 
-// WithToken sets OAuth/Bearer token authentication.
-//
-// V1 APIs use the historical `Authorization: Bearer;{token}` format.
-func WithToken(token string) Option {
-	return func(c *clientConfig) {
-		c.accessToken = token
-	}
-}
-
-// WithBearerToken sets Bearer token authentication.
-//
-// Deprecated: use WithToken.
-func WithBearerToken(token string) Option {
-	return WithToken(token)
-}
-
-// WithAPIKey sets x-api-key.
+// WithAPIKey sets X-Api-Key authentication.
 func WithAPIKey(apiKey string) Option {
 	return func(c *clientConfig) {
 		c.apiKey = apiKey
 	}
-}
-
-// WithAppID sets app_id + access_key + secret_key authentication.
-//
-// The secret key is sent with the provider header name X-Api-App-Key.
-func WithAppID(appID, accessKey, secretKey string) Option {
-	return func(c *clientConfig) {
-		c.appID = appID
-		c.accessKey = accessKey
-		c.appKey = secretKey
-	}
-}
-
-// WithAccessKeySecretKey sets app_id + access_key + secret_key authentication.
-//
-// Deprecated: use WithAppID.
-func WithAccessKeySecretKey(accessKey, secretKey string) Option {
-	return func(c *clientConfig) {
-		c.accessKey = accessKey
-		c.appKey = secretKey
-	}
-}
-
-// WithV2APIKey sets V2/V3 access-key authentication.
-//
-// Deprecated: use WithAppID for standard terminology.
-func WithV2APIKey(accessKey, secretKey string) Option {
-	return WithAccessKeySecretKey(accessKey, secretKey)
-}
-
-// WithRealtimeAPIKey is a compatibility alias.
-//
-// Deprecated: use WithAppID for standard terminology.
-func WithRealtimeAPIKey(accessKey, secretKey string) Option {
-	return WithAccessKeySecretKey(accessKey, secretKey)
 }
 
 // WithResourceID sets the default resource_id.
@@ -258,16 +199,8 @@ func WithUserID(userID string) Option {
 }
 
 func (c *Client) authCredentials() auth.Credentials {
-	appKey := c.config.appKey
-	if appKey == "" {
-		appKey = c.config.appID
-	}
-
 	return auth.Credentials{
 		AppID:             c.config.appID,
-		AppKey:            appKey,
-		AccessToken:       c.config.accessToken,
-		AccessKey:         c.config.accessKey,
 		APIKey:            c.config.apiKey,
 		DefaultResourceID: c.config.resourceID,
 	}

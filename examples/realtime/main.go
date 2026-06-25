@@ -42,28 +42,19 @@ func main() {
 
 	appID := firstNonEmpty(os.Getenv("DOUBAO_APP_ID"), os.Getenv("DOUBAO_REALTIME_APP_ID"))
 	apiKey := firstNonEmpty(os.Getenv("DOUBAO_API_KEY"), os.Getenv("DOUBAO_REALTIME_API_KEY"))
-	accessKey := firstNonEmpty(os.Getenv("DOUBAO_ACCESS_KEY"), os.Getenv("DOUBAO_REALTIME_ACCESS_KEY"))
 	resourceID := firstNonEmpty(os.Getenv("DOUBAO_REALTIME_RESOURCE_ID"), doubaospeech.ResourceRealtime)
-	if apiKey == "" && accessKey == "" {
-		fmt.Fprintln(os.Stderr, "missing DOUBAO_API_KEY/DOUBAO_REALTIME_API_KEY or DOUBAO_ACCESS_KEY/DOUBAO_REALTIME_ACCESS_KEY")
-		os.Exit(2)
-	}
-	if apiKey == "" && appID == "" {
-		fmt.Fprintln(os.Stderr, "missing environment variable DOUBAO_APP_ID or DOUBAO_REALTIME_APP_ID for app-id auth")
+	if appID == "" || apiKey == "" {
+		fmt.Fprintln(os.Stderr, "missing DOUBAO_APP_ID/DOUBAO_REALTIME_APP_ID or DOUBAO_API_KEY/DOUBAO_REALTIME_API_KEY")
 		os.Exit(2)
 	}
 
 	opts := []doubaospeech.Option{
 		doubaospeech.WithResourceID(resourceID),
 		doubaospeech.WithUserID("example-realtime-user"),
-	}
-	if apiKey != "" {
-		opts = append(opts, doubaospeech.WithAPIKey(apiKey))
-	} else {
-		opts = append(opts, doubaospeech.WithAppID(appID, accessKey, doubaospeech.AppKeyRealtime))
+		doubaospeech.WithAPIKey(apiKey),
 	}
 
-	client := doubaospeech.NewClient(opts...)
+	client := doubaospeech.NewClient(appID, opts...)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()

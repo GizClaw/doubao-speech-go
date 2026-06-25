@@ -29,7 +29,7 @@ func TestWithHTTPClientNilKeepsDefaultTransport(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(
+	client := NewClient("app-test",
 		WithBaseURL(server.URL),
 		WithAPIKey("key-test"),
 		WithHTTPClient(nil),
@@ -54,7 +54,7 @@ func TestWithHTTPTransportTypedNilKeepsDefaultTransport(t *testing.T) {
 	defer server.Close()
 
 	var typedNil *panicOnNilDoer
-	client := NewClient(
+	client := NewClient("app-test",
 		WithBaseURL(server.URL),
 		WithAPIKey("key-test"),
 		WithHTTPTransport(typedNil),
@@ -79,7 +79,7 @@ func TestWithHTTPTransportTypedNilKeepsDefaultTransport(t *testing.T) {
 }
 
 func TestDoJSONRequestWithTypedNilTransportReturnsStructuredError(t *testing.T) {
-	client := NewClient(
+	client := NewClient("app-test",
 		WithBaseURL("https://example.com"),
 		WithAPIKey("key-test"),
 	)
@@ -111,8 +111,8 @@ func TestDoJSONRequestWithTypedNilTransportReturnsStructuredError(t *testing.T) 
 }
 
 func TestTTSV2StreamWithTypedNilTransportReturnsStructuredError(t *testing.T) {
-	client := NewClient(
-		WithAppID("app-test", "ak-test", "app-test"),
+	client := NewClient("app-test",
+		WithAPIKey("key-test"),
 		WithBaseURL("https://example.com"),
 	)
 

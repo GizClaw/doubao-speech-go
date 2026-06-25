@@ -77,6 +77,6 @@ Current older workflow:
 
 ```bash
 DOUBAO_APP_ID=<your_app_id> \
-DOUBAO_TOKEN=<your_token> \
+DOUBAO_API_KEY=<your_api_key> \
 go run ./examples/voice_clone -speaker-id <speaker_id> -audio /path/to/sample.wav
 ```

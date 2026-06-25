@@ -5,25 +5,10 @@ This example demonstrates `POST /api/v3/tts/unidirectional` streaming synthesis.
 ## Run with API Key
 
 ```bash
-DOUBAO_API_KEY=<your_api_key> \
-go run ./examples/tts_v2/http_stream -auth-mode api -text "Hello from Doubao TTS" -output /tmp/tts_v2_output.mp3
-```
-
-## Run with Access Key
-
-```bash
 DOUBAO_APP_ID=<your_app_id> \
-DOUBAO_ACCESS_KEY=<your_access_key> \
-go run ./examples/tts_v2/http_stream -auth-mode access -speaker zh_female_xiaohe_uranus_bigtts -resource-id seed-tts-2.0
+DOUBAO_API_KEY=<your_api_key> \
+go run ./examples/tts_v2/http_stream -text "Hello from Doubao TTS" -output /tmp/tts_v2_output.mp3
 ```
-
-`DOUBAO_TOKEN` is also accepted as an alias of `DOUBAO_ACCESS_KEY`.
-
-Optional:
-
-- `DOUBAO_APP_KEY` (used with `-auth-mode access`; defaults to `DOUBAO_APP_ID` when omitted)
-
-By default, `-auth-mode auto` is used and it prefers Access Key over API Key when both are present.
 
 ## Important resource/speaker matching
 
@@ -70,4 +55,3 @@ Common mismatch error:
 - `-sample-rate`: sample rate (`24000` default)
 - `-output`: output file path (`tts_v2_output.mp3` default)
 - `-timeout-sec`: request timeout seconds (`120` default)
-- `-auth-mode`: `auto|access|api` (`auto` default)

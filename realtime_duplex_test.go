@@ -12,7 +12,7 @@ import (
 )
 
 func TestRealtimeDuplexOpenSessionSendsCreate(t *testing.T) {
-	client := NewClient(WithAPIKey("test-key"))
+	client := NewClient("app-test", WithAPIKey("test-key"))
 	conn := newFakeWSConn()
 	dialer := &fakeDialer{
 		conn: conn,
@@ -99,8 +99,8 @@ func TestRealtimeDuplexOpenSessionSendsCreate(t *testing.T) {
 	}
 }
 
-func TestRealtimeDuplexOpenSessionSendsAccessKeyHeaders(t *testing.T) {
-	client := NewClient(WithAppID("test-app", "test-ak", AppKeyRealtime))
+func TestRealtimeDuplexOpenSessionSendsAPIKeyHeaders(t *testing.T) {
+	client := NewClient("test-app", WithAPIKey("key-test"))
 	conn := newFakeWSConn()
 	dialer := &fakeDialer{conn: conn}
 
@@ -114,17 +114,17 @@ func TestRealtimeDuplexOpenSessionSendsAccessKeyHeaders(t *testing.T) {
 	}
 	defer session.Close()
 
-	if got := dialer.headers.Get("X-Api-Access-Key"); got != "test-ak" {
-		t.Fatalf("X-Api-Access-Key = %q, want test-ak", got)
+	if got := dialer.headers.Get("X-Api-Key"); got != "key-test" {
+		t.Fatalf("X-Api-Key = %q, want key-test", got)
 	}
 	if got := dialer.headers.Get("X-Api-App-Id"); got != "test-app" {
 		t.Fatalf("X-Api-App-Id = %q, want test-app", got)
 	}
-	if got := dialer.headers.Get("X-Api-App-Key"); got != AppKeyRealtime {
-		t.Fatalf("X-Api-App-Key = %q, want %s", got, AppKeyRealtime)
+	if got := dialer.headers.Get("X-Api-App-Key"); got != "" {
+		t.Fatalf("X-Api-App-Key = %q, want empty", got)
 	}
-	if got := dialer.headers.Get("X-Api-Key"); got != "" {
-		t.Fatalf("X-Api-Key = %q, want empty", got)
+	if got := dialer.headers.Get("X-Api-Access-Key"); got != "" {
+		t.Fatalf("X-Api-Access-Key = %q, want empty", got)
 	}
 }
 
@@ -283,7 +283,7 @@ func TestRealtimeDuplexCloseIdempotent(t *testing.T) {
 func newOpenedRealtimeDuplexSessionForTest(t *testing.T) (*RealtimeDuplexSession, *fakeWSConn) {
 	t.Helper()
 
-	client := NewClient(WithAPIKey("test-key"))
+	client := NewClient("app-test", WithAPIKey("test-key"))
 	conn := newFakeWSConn()
 	svc := newRealtimeDuplexService(client)
 	svc.dialer = &fakeDialer{conn: conn}

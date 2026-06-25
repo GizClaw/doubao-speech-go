@@ -584,15 +584,10 @@ func shouldSendASTTargetAudio(cfg ASTTranslateConfig) bool {
 
 func buildASTTranslateHeaders(creds auth.Credentials, resourceID string, connectID string) http.Header {
 	headers := http.Header{}
-	if creds.AccessKey != "" || creds.AccessToken != "" {
-		if creds.AppID != "" {
-			headers.Set("X-Api-App-Id", creds.AppID)
-		}
-		if creds.AppKey != "" && creds.AppKey != creds.AppID {
-			headers.Set("X-Api-App-Key", creds.AppKey)
-		}
-		headers.Set("X-Api-Access-Key", firstNonEmpty(creds.AccessKey, creds.AccessToken))
-	} else if creds.APIKey != "" {
+	if creds.AppID != "" {
+		headers.Set("X-Api-App-Id", creds.AppID)
+	}
+	if creds.APIKey != "" {
 		headers.Set("X-Api-Key", creds.APIKey)
 	}
 	if resourceID == "" {

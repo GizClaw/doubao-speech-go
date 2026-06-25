@@ -22,7 +22,6 @@ func main() {
 		sampleRate int
 		outputPath string
 		timeoutSec int
-		authMode   string
 	)
 
 	flag.StringVar(&text, "text", "Hello, this is a TTS V2 HTTP stream example.", "Text to synthesize")
@@ -32,31 +31,12 @@ func main() {
 	flag.IntVar(&sampleRate, "sample-rate", 24000, "Audio sample rate")
 	flag.StringVar(&outputPath, "output", "tts_v2_output.mp3", "Output audio file path")
 	flag.IntVar(&timeoutSec, "timeout-sec", 120, "Request timeout in seconds")
-	flag.StringVar(&authMode, "auth-mode", "auto", "Auth mode: auto|access|api (auto prefers access key)")
 	flag.Parse()
 
 	appID := strings.TrimSpace(os.Getenv("DOUBAO_APP_ID"))
-	accessKey := strings.TrimSpace(os.Getenv("DOUBAO_ACCESS_KEY"))
-	if accessKey == "" {
-		accessKey = strings.TrimSpace(os.Getenv("DOUBAO_TOKEN"))
-	}
 	apiKey := strings.TrimSpace(os.Getenv("DOUBAO_API_KEY"))
-	appKey := strings.TrimSpace(os.Getenv("DOUBAO_APP_KEY"))
-	if appKey == "" {
-		appKey = appID
-	}
-
-	authMode = strings.ToLower(strings.TrimSpace(authMode))
-	if authMode == "" {
-		authMode = "auto"
-	}
-	if authMode != "auto" && authMode != "access" && authMode != "api" {
-		fmt.Fprintln(os.Stderr, "-auth-mode must be one of: auto, access, api")
-		os.Exit(2)
-	}
-
-	if accessKey == "" && apiKey == "" {
-		fmt.Fprintln(os.Stderr, "missing credentials: set DOUBAO_ACCESS_KEY/DOUBAO_TOKEN or DOUBAO_API_KEY")
+	if appID == "" || apiKey == "" {
+		fmt.Fprintln(os.Stderr, "missing DOUBAO_APP_ID or DOUBAO_API_KEY")
 		os.Exit(2)
 	}
 
@@ -78,42 +58,12 @@ func main() {
 	opts := []doubaospeech.Option{
 		doubaospeech.WithResourceID(resourceID),
 		doubaospeech.WithUserID("example-user"),
+		doubaospeech.WithAPIKey(apiKey),
 	}
 
-	selectedAuthMode := authMode
-	if selectedAuthMode == "auto" {
-		if accessKey != "" {
-			selectedAuthMode = "access"
-		} else {
-			selectedAuthMode = "api"
-		}
-	}
+	fmt.Printf("using auth mode=api-key resource_id=%s speaker=%s\n", resourceID, speaker)
 
-	switch selectedAuthMode {
-	case "access":
-		if accessKey == "" {
-			fmt.Fprintln(os.Stderr, "-auth-mode=access requires DOUBAO_ACCESS_KEY or DOUBAO_TOKEN")
-			os.Exit(2)
-		}
-		if appID == "" {
-			fmt.Fprintln(os.Stderr, "-auth-mode=access requires DOUBAO_APP_ID")
-			os.Exit(2)
-		}
-		opts = append(opts, doubaospeech.WithAppID(appID, accessKey, appKey))
-	case "api":
-		if apiKey == "" {
-			fmt.Fprintln(os.Stderr, "-auth-mode=api requires DOUBAO_API_KEY")
-			os.Exit(2)
-		}
-		opts = append(opts, doubaospeech.WithAPIKey(apiKey))
-	default:
-		fmt.Fprintln(os.Stderr, "unexpected auth mode")
-		os.Exit(2)
-	}
-
-	fmt.Printf("using auth mode=%s resource_id=%s speaker=%s\n", selectedAuthMode, resourceID, speaker)
-
-	client := doubaospeech.NewClient(opts...)
+	client := doubaospeech.NewClient(appID, opts...)
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeoutSec)*time.Second)
 	defer cancel()

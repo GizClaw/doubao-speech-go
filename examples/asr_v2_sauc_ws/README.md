@@ -14,15 +14,8 @@ wss://openspeech.bytedance.com/api/v3/sauc/bigmodel
 ## Run with API Key
 
 ```bash
-DOUBAO_API_KEY=<your_api_key> \
-go run ./examples/asr_v2_sauc_ws
-```
-
-## Run with Legacy Access Key
-
-```bash
 DOUBAO_APP_ID=<your_app_id> \
-DOUBAO_ACCESS_KEY=<your_access_key> \
+DOUBAO_API_KEY=<your_api_key> \
 go run ./examples/asr_v2_sauc_ws \
   -audio /path/to/audio.pcm \
   -resource-id volc.seedasr.sauc.duration

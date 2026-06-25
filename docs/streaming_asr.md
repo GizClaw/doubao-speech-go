@@ -20,7 +20,7 @@ instead of separate 1.0 and 2.0 documents.
 ## Implemented SDK API
 
 ```go
-client := doubaospeech.NewClient(
+client := doubaospeech.NewClient(appID,
 	doubaospeech.WithAPIKey(apiKey),
 	doubaospeech.WithResourceID(doubaospeech.ResourceASRV2Duration),
 )
@@ -49,6 +49,7 @@ Recommended API-key headers:
 
 ```http
 X-Api-Key: <api-key>
+X-Api-App-Id: <app-id>
 X-Api-Resource-Id: <resource-id>
 X-Api-Request-Id: <uuid>
 X-Api-Sequence: -1
@@ -88,6 +89,7 @@ yet, including:
 ## Example
 
 ```bash
+DOUBAO_APP_ID=<your_app_id> \
 DOUBAO_API_KEY=<your_api_key> \
 go run ./examples/asr_v2_sauc_ws
 ```

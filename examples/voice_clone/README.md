@@ -14,8 +14,7 @@ examples/voice_clone/main.go
 ## Requirements
 
 - `DOUBAO_APP_ID` (required)
-- `DOUBAO_TOKEN` (recommended) or `DOUBAO_ACCESS_KEY`
-- `DOUBAO_API_KEY` (optional, only if your tenant accepts `x-api-key`)
+- `DOUBAO_API_KEY` (required)
 
 ## Important: model/resource/speaker mapping
 
@@ -28,11 +27,10 @@ The `speaker_id` must belong to the same model/resource family.
 
 ```bash
 DOUBAO_APP_ID=<your_app_id> \
-DOUBAO_TOKEN=<your_token> \
+DOUBAO_API_KEY=<your_api_key> \
 go run ./examples/voice_clone \
   -speaker-id S_RaTJh1aR1 \
   -audio ./examples/asr_v2_sauc_ws/sample_zh_16k.pcm \
-  -auth-mode token \
   -model-type 4 \
   -resource-id seed-icl-2.0
 ```
@@ -43,11 +41,10 @@ If `-resource-id` is omitted, the SDK auto-selects by `-model-type`.
 
 ```bash
 DOUBAO_APP_ID=<your_app_id> \
-DOUBAO_TOKEN=<your_token> \
+DOUBAO_API_KEY=<your_api_key> \
 go run ./examples/voice_clone \
   -speaker-id <your_icl1_speaker_id> \
   -audio /path/to/sample.wav \
-  -auth-mode token \
   -model-type 1 \
   -resource-id seed-icl-1.0
 ```
@@ -56,7 +53,6 @@ go run ./examples/voice_clone \
 
 - `-speaker-id`: required, `S_...` voice ID
 - `-audio`: required, local training audio file path
-- `-auth-mode`: `auto|token|api` (default `auto`)
 - `-model-type`: clone model type (default `1`)
 - `-resource-id`: optional resource override
 - `-timeout-sec`: task wait timeout seconds (default `180`)
@@ -66,7 +62,5 @@ go run ./examples/voice_clone \
 
 - `parameter license not found for param`
   - Usually model/resource/speaker entitlement mismatch.
-- `request and grant appid mismatch`
-  - AppID and token are not from the same grant.
 - `Invalid X-Api-Key`
-  - Your tenant may not allow API key mode for this endpoint; switch to token mode.
+  - The API key is not valid for the selected AppID or voice-clone resource.

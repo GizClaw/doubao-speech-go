@@ -14,7 +14,7 @@ import (
 )
 
 func TestVoiceCloneUploadValidation(t *testing.T) {
-	client := NewClient(WithAppID("app-test", "", ""))
+	client := NewClient("app-test", WithAPIKey("key-test"))
 
 	tests := []struct {
 		name string
@@ -62,9 +62,8 @@ func TestVoiceCloneUploadSubmitFailure(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(
-		WithAppID("app-test", "", ""),
-		WithToken("token-test"),
+	client := NewClient("app-test",
+		WithAPIKey("key-test"),
 		WithBaseURL(server.URL),
 	)
 
@@ -103,8 +102,8 @@ func TestVoiceCloneUploadAndWaitSuccess(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case voiceCloneUploadPath:
-			if got := r.Header.Get("Authorization"); got != "Bearer;token-test" {
-				t.Fatalf("Authorization = %q, want %q", got, "Bearer;token-test")
+			if got := r.Header.Get("X-Api-Key"); got != "key-test" {
+				t.Fatalf("X-Api-Key = %q, want %q", got, "key-test")
 			}
 			if got := r.Header.Get("Resource-Id"); got != ResourceVoiceCloneV1 {
 				t.Fatalf("Resource-Id = %q, want %q", got, ResourceVoiceCloneV1)
@@ -189,9 +188,8 @@ func TestVoiceCloneUploadAndWaitSuccess(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(
-		WithAppID("app-test", "", ""),
-		WithToken("token-test"),
+	client := NewClient("app-test",
+		WithAPIKey("key-test"),
 		WithBaseURL(server.URL),
 	)
 
@@ -293,9 +291,8 @@ func TestVoiceCloneUploadAndWaitWithDifferentTaskAndSpeakerID(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(
-		WithAppID("app-test", "", ""),
-		WithToken("token-test"),
+	client := NewClient("app-test",
+		WithAPIKey("key-test"),
 		WithBaseURL(server.URL),
 	)
 
@@ -353,9 +350,8 @@ func TestVoiceCloneTaskWaitUnknownStatusRetainsRawValue(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(
-		WithAppID("app-test", "", ""),
-		WithToken("token-test"),
+	client := NewClient("app-test",
+		WithAPIKey("key-test"),
 		WithBaseURL(server.URL),
 	)
 
@@ -408,9 +404,8 @@ func TestVoiceCloneTaskWaitFailurePath(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewClient(
-		WithAppID("app-test", "", ""),
-		WithToken("token-test"),
+	client := NewClient("app-test",
+		WithAPIKey("key-test"),
 		WithBaseURL(server.URL),
 	)
 
