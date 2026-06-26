@@ -393,18 +393,14 @@ func demoTools() []doubaospeech.RealtimeDuplexFunctionTool {
 }
 
 func demoDuplexExtension() *doubaospeech.RealtimeDuplexExtension {
+	enableLoudnessNorm := true
+	enableMusic := false
 	return &doubaospeech.RealtimeDuplexExtension{
-		ASR: map[string]any{
-			"extra": map[string]any{},
-		},
-		TTS: map[string]any{
-			"extra": map[string]any{},
-		},
-		Dialog: map[string]any{
-			"extra": map[string]any{
-				"audit_response":       "抱歉，这个问题我无法回答，你可以换个其他话题。",
-				"enable_loudness_norm": true,
-				"enable_music":         false,
+		Dialog: &doubaospeech.RealtimeDuplexDialogExtension{
+			Extra: &doubaospeech.RealtimeDuplexDialogExtra{
+				AuditResponse:      "抱歉，这个问题我无法回答，你可以换个其他话题。",
+				EnableLoudnessNorm: &enableLoudnessNorm,
+				EnableMusic:        &enableMusic,
 			},
 		},
 	}

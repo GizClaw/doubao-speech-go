@@ -89,15 +89,13 @@ type RealtimeConfig struct {
 
 // RealtimeASRConfig configures ASR behavior.
 type RealtimeASRConfig struct {
-	Language Language       `json:"language,omitempty" yaml:"language,omitempty"`
-	Extra    map[string]any `json:"extra,omitempty" yaml:"extra,omitempty"`
+	Language Language `json:"language,omitempty" yaml:"language,omitempty"`
 }
 
 // RealtimeTTSConfig configures TTS behavior.
 type RealtimeTTSConfig struct {
 	Speaker     string              `json:"speaker" yaml:"speaker"`
 	AudioConfig RealtimeAudioConfig `json:"audio_config" yaml:"audio_config"`
-	Extra       map[string]any      `json:"extra,omitempty" yaml:"extra,omitempty"`
 }
 
 // RealtimeAudioConfig describes audio IO parameters.
@@ -112,11 +110,10 @@ type RealtimeAudioConfig struct {
 
 // RealtimeDialogConfig configures dialogue behavior.
 type RealtimeDialogConfig struct {
-	BotName           string         `json:"bot_name,omitempty" yaml:"bot_name,omitempty"`
-	SystemRole        string         `json:"system_role,omitempty" yaml:"system_role,omitempty"`
-	SpeakingStyle     string         `json:"speaking_style,omitempty" yaml:"speaking_style,omitempty"`
-	CharacterManifest string         `json:"character_manifest,omitempty" yaml:"character_manifest,omitempty"`
-	Extra             map[string]any `json:"extra,omitempty" yaml:"extra,omitempty"`
+	BotName           string `json:"bot_name,omitempty" yaml:"bot_name,omitempty"`
+	SystemRole        string `json:"system_role,omitempty" yaml:"system_role,omitempty"`
+	SpeakingStyle     string `json:"speaking_style,omitempty" yaml:"speaking_style,omitempty"`
+	CharacterManifest string `json:"character_manifest,omitempty" yaml:"character_manifest,omitempty"`
 }
 
 // RealtimePromptConfig controls prompt and prompt variables.
@@ -127,12 +124,11 @@ type RealtimePromptConfig struct {
 
 // RealtimeGenerationProps controls generation params.
 type RealtimeGenerationProps struct {
-	Temperature      float64        `json:"temperature,omitempty" yaml:"temperature,omitempty"`
-	TopP             float64        `json:"top_p,omitempty" yaml:"top_p,omitempty"`
-	MaxTokens        int            `json:"max_tokens,omitempty" yaml:"max_tokens,omitempty"`
-	PresencePenalty  float64        `json:"presence_penalty,omitempty" yaml:"presence_penalty,omitempty"`
-	FrequencyPenalty float64        `json:"frequency_penalty,omitempty" yaml:"frequency_penalty,omitempty"`
-	Extra            map[string]any `json:"extra,omitempty" yaml:"extra,omitempty"`
+	Temperature      float64 `json:"temperature,omitempty" yaml:"temperature,omitempty"`
+	TopP             float64 `json:"top_p,omitempty" yaml:"top_p,omitempty"`
+	MaxTokens        int     `json:"max_tokens,omitempty" yaml:"max_tokens,omitempty"`
+	PresencePenalty  float64 `json:"presence_penalty,omitempty" yaml:"presence_penalty,omitempty"`
+	FrequencyPenalty float64 `json:"frequency_penalty,omitempty" yaml:"frequency_penalty,omitempty"`
 }
 
 // RealtimeConversationMessage is one dialog history entry.

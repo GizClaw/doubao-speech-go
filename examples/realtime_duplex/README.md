@@ -42,6 +42,12 @@ The run logs:
 - deterministic local tool outputs sent back through `conversation.item.create`
 - ASR SAUC transcript of the Duplex returned audio
 
+The example configures only typed Duplex extension fields:
+`extension.dialog.extra.audit_response`,
+`extension.dialog.extra.enable_loudness_norm`, and
+`extension.dialog.extra.enable_music`. Other provider-specific extension
+sections are not part of this SDK's public schema.
+
 The optional `-out-dir` writes:
 
 - `roundN-old-realtime.pcm`

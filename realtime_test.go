@@ -3,6 +3,7 @@ package doubaospeech
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -103,17 +104,6 @@ func TestRealtimeStartPayloadIncludesTypedModeModelAndRates(t *testing.T) {
 	cfg.Model = RealtimeModelVersion("O")
 	cfg.TTS.AudioConfig.SpeechRate = 12
 	cfg.TTS.AudioConfig.LoudnessRate = -5
-	cfg.Dialog.Extra = map[string]any{
-		"extra": map[string]any{
-			"input_mod": "text",
-			"model":     "2.2.0.0",
-		},
-	}
-	cfg.TTS.Extra = map[string]any{
-		"audio_config": map[string]any{
-			"speech_rate": 99,
-		},
-	}
 
 	normalized, err := normalizeRealtimeConfig(&cfg)
 	if err != nil {
@@ -152,6 +142,11 @@ func TestRealtimeStartPayloadIncludesTypedModeModelAndRates(t *testing.T) {
 	if got := audioConfig["loudness_rate"]; got != float64(-5) {
 		t.Fatalf("loudness_rate = %v, want -5", got)
 	}
+}
+
+func TestRealtimeConfigsDoNotExposeRequestPassthroughMaps(t *testing.T) {
+	assertNoAnyMapFields(t, reflect.TypeOf(RealtimeConfig{}), "RealtimeConfig", map[reflect.Type]bool{})
+	assertNoAnyMapFields(t, reflect.TypeOf(RealtimeDuplexConfig{}), "RealtimeDuplexConfig", map[reflect.Type]bool{})
 }
 
 func TestRealtimeConfigValidationRejectsInvalidTypedFields(t *testing.T) {
@@ -607,4 +602,30 @@ func mustBuildRealtimeServerErrorFrame(t *testing.T, event int32, sessionID stri
 		t.Fatalf("BuildEventFrame error = %v", err)
 	}
 	return raw
+}
+
+func assertNoAnyMapFields(t *testing.T, typ reflect.Type, path string, seen map[reflect.Type]bool) {
+	t.Helper()
+
+	for typ.Kind() == reflect.Pointer || typ.Kind() == reflect.Slice || typ.Kind() == reflect.Array {
+		typ = typ.Elem()
+	}
+	if typ.Kind() != reflect.Struct {
+		return
+	}
+	if seen[typ] {
+		return
+	}
+	seen[typ] = true
+
+	anyType := reflect.TypeOf((*any)(nil)).Elem()
+	for i := range typ.NumField() {
+		field := typ.Field(i)
+		fieldPath := path + "." + field.Name
+		fieldType := field.Type
+		if fieldType.Kind() == reflect.Map && fieldType.Key().Kind() == reflect.String && fieldType.Elem() == anyType {
+			t.Fatalf("%s exposes map[string]any passthrough", fieldPath)
+		}
+		assertNoAnyMapFields(t, fieldType, fieldPath, seen)
+	}
 }

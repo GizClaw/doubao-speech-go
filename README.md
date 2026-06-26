@@ -57,7 +57,7 @@ Partially implemented:
 - [ ] TTS 1.0/2.0 parameter surface: the SDK covers common speaker/audio/text fields, but advanced official fields such as subtitles, timestamps, usage token return, cache, AIGC watermarking, explicit language/dialect, `context_texts`, and tag parsing still need typed options.
 - [ ] TTS WebSocket single-direction and SSE variants: `docs/tts_v1.md` lists `wss://.../tts/unidirectional/stream` and `/tts/unidirectional/sse`; only HTTP Chunked and bidirectional WebSocket are implemented.
 - [ ] Voice clone: `VoiceClone.Upload`, `GetStatus`, and `Activate` implement the older `/api/v1/mega_tts/*` workflow; the newer documented `POST /api/v3/tts/voice_clone` interface in `docs/voice_clone.md` is not implemented yet.
-- [ ] Realtime 1.0 and full-duplex extensions: core events and extension pass-through are present, but newly documented provider-specific fields should be periodically audited against upstream docs.
+- [ ] Realtime provider-specific fields: Realtime 1.0 and Duplex request configs expose typed fields only; newly documented provider fields should be added as typed structs with tests.
 
 Planned:
 

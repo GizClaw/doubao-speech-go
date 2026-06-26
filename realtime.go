@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"iter"
 	"maps"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -882,15 +881,8 @@ func buildRealtimeStartPayload(cfg RealtimeConfig) ([]byte, error) {
 		"dialog": map[string]any{},
 	}
 
-	asr := payload["asr"].(map[string]any)
-	maps.Copy(asr, cfg.ASR.Extra)
-
 	tts := payload["tts"].(map[string]any)
-	ttsAudio := ensureRealtimeObject(tts, "audio_config")
-	copyRealtimeExtra(tts, cfg.TTS.Extra, "audio_config")
-	if extraAudio, ok := cfg.TTS.Extra["audio_config"].(map[string]any); ok {
-		maps.Copy(ttsAudio, extraAudio)
-	}
+	ttsAudio := tts["audio_config"].(map[string]any)
 	if cfg.TTS.AudioConfig.SpeechRate != 0 {
 		ttsAudio["speech_rate"] = cfg.TTS.AudioConfig.SpeechRate
 	}
@@ -911,18 +903,15 @@ func buildRealtimeStartPayload(cfg RealtimeConfig) ([]byte, error) {
 	if cfg.Dialog.CharacterManifest != "" {
 		dialog["character_manifest"] = cfg.Dialog.CharacterManifest
 	}
-	copyRealtimeExtra(dialog, cfg.Dialog.Extra, "extra")
-	if cfg.InputMode != RealtimeInputModeDefault || cfg.Model != "" || cfg.Dialog.Extra["extra"] != nil {
-		dialogExtra := ensureRealtimeObject(dialog, "extra")
-		if extra, ok := cfg.Dialog.Extra["extra"].(map[string]any); ok {
-			maps.Copy(dialogExtra, extra)
-		}
+	if cfg.InputMode != RealtimeInputModeDefault || cfg.Model != "" {
+		dialogExtra := map[string]any{}
 		if cfg.InputMode != RealtimeInputModeDefault {
 			dialogExtra["input_mod"] = string(cfg.InputMode)
 		}
 		if cfg.Model != "" {
 			dialogExtra["model"] = string(cfg.Model)
 		}
+		dialog["extra"] = dialogExtra
 	}
 
 	if cfg.Prompt.System != "" || len(cfg.Prompt.Variables) > 0 {
@@ -1084,31 +1073,6 @@ func validateRealtimeRate(name string, value int) error {
 	return nil
 }
 
-func ensureRealtimeObject(parent map[string]any, key string) map[string]any {
-	if existing, ok := parent[key].(map[string]any); ok {
-		return existing
-	}
-	obj := map[string]any{}
-	parent[key] = obj
-	return obj
-}
-
-func copyRealtimeExtra(dst, src map[string]any, nestedKeys ...string) {
-	if len(src) == 0 {
-		return
-	}
-	for key, value := range src {
-		if containsRealtimeKey(nestedKeys, key) {
-			continue
-		}
-		dst[key] = value
-	}
-}
-
-func containsRealtimeKey(keys []string, key string) bool {
-	return slices.Contains(keys, key)
-}
-
 func realtimeString(value any) string {
 	switch v := value.(type) {
 	case nil:
@@ -1136,8 +1100,7 @@ func hasRealtimeProps(props RealtimeGenerationProps) bool {
 		props.TopP != 0 ||
 		props.MaxTokens != 0 ||
 		props.PresencePenalty != 0 ||
-		props.FrequencyPenalty != 0 ||
-		len(props.Extra) > 0
+		props.FrequencyPenalty != 0
 }
 
 func cloneConversationHistory(history []RealtimeConversationMessage) []RealtimeConversationMessage {
@@ -1159,12 +1122,7 @@ func clonePromptConfig(prompt RealtimePromptConfig) RealtimePromptConfig {
 }
 
 func cloneGenerationProps(props RealtimeGenerationProps) RealtimeGenerationProps {
-	out := props
-	if len(props.Extra) > 0 {
-		out.Extra = make(map[string]any, len(props.Extra))
-		maps.Copy(out.Extra, props.Extra)
-	}
-	return out
+	return props
 }
 
 func readWSMessageWithContext(ctx context.Context, conn transport.WSConn) (int, []byte, error) {

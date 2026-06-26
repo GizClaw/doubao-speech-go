@@ -55,6 +55,37 @@ Typical upstream requirements:
 - output sample rate: 24 kHz
 - output formats: `pcm_s16le` or `ogg_opus`
 
+## Extension Fields
+
+`RealtimeDuplexExtension` is intentionally typed. The SDK only exposes extension
+fields that it recognizes and treats as supported API surface; unknown provider
+keys are not accepted through public structs.
+
+The default recommendation for downstream schemas is to omit `extension` unless
+one of the fields below is required. Core Duplex concepts should use typed
+`session` fields instead: model and instructions live under `session.model` and
+`session.instructions`, audio codecs and voice live under `session.audio`, and
+function calling lives under `session.tools`.
+
+Supported extension fields:
+
+| JSON path | Go field | Type | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `extension.dialog.extra.audit_response` | `RealtimeDuplexDialogExtra.AuditResponse` | `string` | service default | Response text used when dialogue audit blocks an answer. |
+| `extension.dialog.extra.enable_loudness_norm` | `RealtimeDuplexDialogExtra.EnableLoudnessNorm` | `*bool` | service default | Enables dialogue output loudness normalization when set. |
+| `extension.dialog.extra.enable_music` | `RealtimeDuplexDialogExtra.EnableMusic` | `*bool` | service default | Enables or disables generated background music when set. Use a pointer so explicit `false` is serialized. |
+
+No stable SDK fields are currently exposed under `extension.asr`,
+`extension.tts`, `extension.s2s`, or top-level `extension.extra`. If upstream
+documents stable fields for those sections, add typed structs and tests before
+exposing them.
+
+Realtime 1.0 extras are not automatically portable to Duplex. Do not carry
+forward Realtime 1.0 VAD window settings, web search flags, bot name, speaking
+style, or character manifest into `RealtimeDuplexExtension`; they have no typed
+Duplex extension field in this SDK. Use Duplex-native `session.instructions`,
+`session.audio`, and `session.tools` instead.
+
 ## Example
 
 The example demonstrates a complete local loop: generate an old realtime prompt,

@@ -69,6 +69,23 @@ The upstream API supports:
 For PCM microphone input, upload mono `pcm_s16le` at 16 kHz. The upstream
 recommendation is 20 ms audio packets.
 
+## Typed Request Surface
+
+`RealtimeConfig` only exposes typed request fields. The SDK does not accept
+arbitrary `map[string]any` passthrough fields for ASR, TTS, dialog, or
+generation props.
+
+Use these typed fields instead of provider-specific extras:
+
+- `ASR.Language`
+- `TTS.Speaker` and `TTS.AudioConfig`
+- `Dialog.BotName`, `Dialog.SystemRole`, `Dialog.SpeakingStyle`, and
+  `Dialog.CharacterManifest`
+- `Prompt.System` and `Prompt.Variables`
+- `Props.Temperature`, `Props.TopP`, `Props.MaxTokens`,
+  `Props.PresencePenalty`, and `Props.FrequencyPenalty`
+- `InputMode` and `Model`
+
 ## Output Audio
 
 By default, the server returns OGG Opus audio. The request can ask for PCM output

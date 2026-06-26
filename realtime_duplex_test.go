@@ -37,6 +37,15 @@ func TestRealtimeDuplexOpenSessionSendsCreate(t *testing.T) {
 				},
 			},
 		},
+		Extension: &RealtimeDuplexExtension{
+			Dialog: &RealtimeDuplexDialogExtension{
+				Extra: &RealtimeDuplexDialogExtra{
+					AuditResponse:      "blocked",
+					EnableLoudnessNorm: boolPtr(true),
+					EnableMusic:        boolPtr(false),
+				},
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("OpenSession error = %v", err)
@@ -78,6 +87,15 @@ func TestRealtimeDuplexOpenSessionSendsCreate(t *testing.T) {
 				} `json:"output"`
 			} `json:"audio"`
 		} `json:"session"`
+		Extension struct {
+			Dialog struct {
+				Extra struct {
+					AuditResponse      string `json:"audit_response"`
+					EnableLoudnessNorm *bool  `json:"enable_loudness_norm"`
+					EnableMusic        *bool  `json:"enable_music"`
+				} `json:"extra"`
+			} `json:"dialog"`
+		} `json:"extension"`
 	}
 	if err := json.Unmarshal(writes[0], &event); err != nil {
 		t.Fatalf("unmarshal session.create: %v", err)
@@ -96,6 +114,15 @@ func TestRealtimeDuplexOpenSessionSendsCreate(t *testing.T) {
 	}
 	if event.Session.Audio.Output.Format.Type != RealtimeDuplexAudioPCMS16LE {
 		t.Fatalf("output format = %q, want %s", event.Session.Audio.Output.Format.Type, RealtimeDuplexAudioPCMS16LE)
+	}
+	if event.Extension.Dialog.Extra.AuditResponse != "blocked" {
+		t.Fatalf("audit_response = %q, want blocked", event.Extension.Dialog.Extra.AuditResponse)
+	}
+	if event.Extension.Dialog.Extra.EnableLoudnessNorm == nil || !*event.Extension.Dialog.Extra.EnableLoudnessNorm {
+		t.Fatalf("enable_loudness_norm = %v, want true", event.Extension.Dialog.Extra.EnableLoudnessNorm)
+	}
+	if event.Extension.Dialog.Extra.EnableMusic == nil || *event.Extension.Dialog.Extra.EnableMusic {
+		t.Fatalf("enable_music = %v, want false", event.Extension.Dialog.Extra.EnableMusic)
 	}
 }
 
@@ -307,4 +334,8 @@ func assertEventType(t *testing.T, payload []byte, want string) {
 	if event.Type != want {
 		t.Fatalf("event type = %q, want %s; payload=%s", event.Type, want, payload)
 	}
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }
