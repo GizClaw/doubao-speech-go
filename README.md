@@ -46,19 +46,19 @@ status by interface:
 
 | Mark | API | Endpoint | SDK surface | Status | Notes |
 | --- | --- | --- | --- | --- | --- |
-| ✅ | Streaming ASR bidirectional | [Streaming ASR](docs/streaming_asr.md) | `client.ASRV2.OpenStreamSession` | Implemented | Streams audio-only frames and parses full-server JSON results. Some upstream request options are not yet typed. |
-| 📄 | Streaming ASR input-only result | [Streaming ASR](docs/streaming_asr.md) | none | Documented only | Needs endpoint selection, final-packet behavior, and typed nostream options. |
-| 📄 | Streaming ASR optimized bidirectional | [Streaming ASR](docs/streaming_asr.md) | none | Documented only | Needs endpoint selection and typed async/nonstream option coverage. |
-| ◐ | TTS WebSocket bidirectional | [TTS v2](docs/tts_v2.md) | `client.TTSV2.OpenStreamSession` | Partially implemented | Lifecycle, text request, cancel, reuse, and audio chunks are implemented. Current config types cover `speaker`, `format`, `sample_rate`, and `resource_id`; advanced 2.0 fields still need typed options. |
-| 📄 | TTS WebSocket unidirectional stream | [TTS v1](docs/tts_v1.md) | none | Documented only | Listed in upstream TTS API inventory. |
-| ✅ | TTS HTTP Chunked stream | [TTS v1](docs/tts_v1.md) | `client.TTSV2.Stream` | Implemented | Streams HTTP response frames and decodes audio chunks. |
-| 📄 | TTS HTTP SSE stream | [TTS v1](docs/tts_v1.md) | none | Documented only | Listed in upstream TTS API inventory. |
-| ✅ | Realtime speech 1.0 | [Realtime speech](docs/realtime_speech.md) | `client.Realtime.OpenSession` | Implemented | Core session, typed StartSession provider fields, text/audio modes, UpdateConfig, RAG text, conversation CRUD/truncate/delete, push-to-talk, TTS text injection, parsed events, and local context helpers are implemented. |
-| ✅ | Realtime full-duplex 3.0 | [Realtime duplex](docs/realtime_duplex.md) | `client.RealtimeDuplex.OpenSession` | Implemented | JSON event flow, typed `extension.asr`/`extension.tts`/`extension.dialog`, audio append/commit, replacement text, context CRUD, response cancel, function-call result return, and parsed events are implemented. |
-| ✅ | AST simultaneous interpretation | [Simultaneous interpretation](docs/simultaneous_interpretation.md) | `client.ASTTranslate.OpenSession` | Implemented | Supports S2T/S2S start, audio upload, config update, finish, parsed subtitle/TTS/usage/muted events, and protobuf transport. |
-| ✅ | Audio generation | [Audio generation](docs/audio_generation.md) | `client.AudioGeneration.Create` | Implemented | Supports text prompts, audio/image/speaker references, audio config, watermark config, decoded audio, and temporary URL response fields. |
-| ✅ | Voice clone v1 workflow | [Voice clone](docs/voice_clone.md) | `client.VoiceClone.Upload`, `GetStatus`, `Activate` | Implemented | Supports training upload, status polling, and activation. |
-| 📄 | Voice clone v3 | [Voice clone](docs/voice_clone.md) | none | Documented only | Needs a typed client for `speaker_id`, `custom_speaker_id`, `audio`, `extra_params`, `speaker_status`, `model_type`, and demo-audio response fields. |
+| 🟢 | Streaming ASR bidirectional | [Streaming ASR](docs/streaming_asr.md) | `client.ASRV2.OpenStreamSession` | Implemented | Streams audio-only frames and parses full-server JSON results. Some upstream request options are not yet typed. |
+| ⚪ | Streaming ASR input-only result | [Streaming ASR](docs/streaming_asr.md) | none | Documented only | Needs endpoint selection, final-packet behavior, and typed nostream options. |
+| ⚪ | Streaming ASR optimized bidirectional | [Streaming ASR](docs/streaming_asr.md) | none | Documented only | Needs endpoint selection and typed async/nonstream option coverage. |
+| 🟡 | TTS WebSocket bidirectional | [TTS v2](docs/tts_v2.md) | `client.TTSV2.OpenStreamSession` | Partially implemented | Lifecycle, text request, cancel, reuse, and audio chunks are implemented. Current config types cover `speaker`, `format`, `sample_rate`, and `resource_id`; advanced 2.0 fields still need typed options. |
+| ⚪ | TTS WebSocket unidirectional stream | [TTS v1](docs/tts_v1.md) | none | Documented only | Listed in upstream TTS API inventory. |
+| 🟢 | TTS HTTP Chunked stream | [TTS v1](docs/tts_v1.md) | `client.TTSV2.Stream` | Implemented | Streams HTTP response frames and decodes audio chunks. |
+| ⚪ | TTS HTTP SSE stream | [TTS v1](docs/tts_v1.md) | none | Documented only | Listed in upstream TTS API inventory. |
+| 🟢 | Realtime speech 1.0 | [Realtime speech](docs/realtime_speech.md) | `client.Realtime.OpenSession` | Implemented | Core session, typed StartSession provider fields, text/audio modes, UpdateConfig, RAG text, conversation CRUD/truncate/delete, push-to-talk, TTS text injection, parsed events, and local context helpers are implemented. |
+| 🟢 | Realtime full-duplex 3.0 | [Realtime duplex](docs/realtime_duplex.md) | `client.RealtimeDuplex.OpenSession` | Implemented | JSON event flow, typed `extension.asr`/`extension.tts`/`extension.dialog`, audio append/commit, replacement text, context CRUD, response cancel, function-call result return, and parsed events are implemented. |
+| 🟢 | AST simultaneous interpretation | [Simultaneous interpretation](docs/simultaneous_interpretation.md) | `client.ASTTranslate.OpenSession` | Implemented | Supports S2T/S2S start, audio upload, config update, finish, parsed subtitle/TTS/usage/muted events, and protobuf transport. |
+| 🟢 | Audio generation | [Audio generation](docs/audio_generation.md) | `client.AudioGeneration.Create` | Implemented | Supports text prompts, audio/image/speaker references, audio config, watermark config, decoded audio, and temporary URL response fields. |
+| 🟢 | Voice clone v1 workflow | [Voice clone](docs/voice_clone.md) | `client.VoiceClone.Upload`, `GetStatus`, `Activate` | Implemented | Supports training upload, status polling, and activation. |
+| ⚪ | Voice clone v3 | [Voice clone](docs/voice_clone.md) | none | Documented only | Needs a typed client for `speaker_id`, `custom_speaker_id`, `audio`, `extra_params`, `speaker_status`, `model_type`, and demo-audio response fields. |
 
 Near-term work:
 
