@@ -38,11 +38,29 @@ func TestRealtimeDuplexOpenSessionSendsCreate(t *testing.T) {
 			},
 		},
 		Extension: &RealtimeDuplexExtension{
+			ASR: &RealtimeASRConfig{
+				AudioInfo: &RealtimeASRAudioInfo{Format: FormatSpeechOpus, SampleRate: SampleRate16000, Channel: 1},
+				Extra: &RealtimeASRExtra{
+					EnableASRTwopass: new(true),
+					Context:          &RealtimeASRContext{Hotwords: []RealtimeHotword{{Word: "豆包"}}},
+				},
+			},
+			TTS: &RealtimeTTSConfig{
+				Speaker: "zh_female_vv_jupiter_bigtts",
+				AudioConfig: RealtimeAudioConfig{
+					SpeechRate:   10,
+					LoudnessRate: -5,
+				},
+				Extra: &RealtimeTTSExtra{ExplicitDialect: "dongbei"},
+			},
 			Dialog: &RealtimeDuplexDialogExtension{
+				DialogID: "dialog-1",
+				Location: &RealtimeLocation{City: "北京"},
 				Extra: &RealtimeDuplexDialogExtra{
-					AuditResponse:      "blocked",
-					EnableLoudnessNorm: boolPtr(true),
-					EnableMusic:        boolPtr(false),
+					AuditResponse:              "blocked",
+					EnableLoudnessNorm:         new(true),
+					EnableMusic:                new(false),
+					EnableConversationTruncate: new(true),
 				},
 			},
 		},
@@ -88,11 +106,31 @@ func TestRealtimeDuplexOpenSessionSendsCreate(t *testing.T) {
 			} `json:"audio"`
 		} `json:"session"`
 		Extension struct {
-			Dialog struct {
+			ASR struct {
+				AudioInfo RealtimeASRAudioInfo `json:"audio_info"`
+				Extra     struct {
+					EnableASRTwopass *bool `json:"enable_asr_twopass"`
+				} `json:"extra"`
+			} `json:"asr"`
+			TTS struct {
+				Speaker     string `json:"speaker"`
+				AudioConfig struct {
+					SpeechRate int `json:"speech_rate"`
+				} `json:"audio_config"`
 				Extra struct {
-					AuditResponse      string `json:"audit_response"`
-					EnableLoudnessNorm *bool  `json:"enable_loudness_norm"`
-					EnableMusic        *bool  `json:"enable_music"`
+					ExplicitDialect string `json:"explicit_dialect"`
+				} `json:"extra"`
+			} `json:"tts"`
+			Dialog struct {
+				DialogID string `json:"dialog_id"`
+				Location struct {
+					City string `json:"city"`
+				} `json:"location"`
+				Extra struct {
+					AuditResponse              string `json:"audit_response"`
+					EnableLoudnessNorm         *bool  `json:"enable_loudness_norm"`
+					EnableMusic                *bool  `json:"enable_music"`
+					EnableConversationTruncate *bool  `json:"enable_conversation_truncate"`
 				} `json:"extra"`
 			} `json:"dialog"`
 		} `json:"extension"`
@@ -115,6 +153,24 @@ func TestRealtimeDuplexOpenSessionSendsCreate(t *testing.T) {
 	if event.Session.Audio.Output.Format.Type != RealtimeDuplexAudioPCMS16LE {
 		t.Fatalf("output format = %q, want %s", event.Session.Audio.Output.Format.Type, RealtimeDuplexAudioPCMS16LE)
 	}
+	if event.Extension.ASR.AudioInfo.Format != FormatSpeechOpus {
+		t.Fatalf("extension asr audio format = %q, want speech_opus", event.Extension.ASR.AudioInfo.Format)
+	}
+	if event.Extension.ASR.Extra.EnableASRTwopass == nil || !*event.Extension.ASR.Extra.EnableASRTwopass {
+		t.Fatalf("extension enable_asr_twopass = %v, want true", event.Extension.ASR.Extra.EnableASRTwopass)
+	}
+	if event.Extension.TTS.Speaker != "zh_female_vv_jupiter_bigtts" {
+		t.Fatalf("extension tts speaker = %q", event.Extension.TTS.Speaker)
+	}
+	if event.Extension.TTS.AudioConfig.SpeechRate != 10 {
+		t.Fatalf("extension tts speech_rate = %d, want 10", event.Extension.TTS.AudioConfig.SpeechRate)
+	}
+	if event.Extension.TTS.Extra.ExplicitDialect != "dongbei" {
+		t.Fatalf("extension tts explicit_dialect = %q, want dongbei", event.Extension.TTS.Extra.ExplicitDialect)
+	}
+	if event.Extension.Dialog.DialogID != "dialog-1" || event.Extension.Dialog.Location.City != "北京" {
+		t.Fatalf("extension dialog = %+v", event.Extension.Dialog)
+	}
 	if event.Extension.Dialog.Extra.AuditResponse != "blocked" {
 		t.Fatalf("audit_response = %q, want blocked", event.Extension.Dialog.Extra.AuditResponse)
 	}
@@ -123,6 +179,9 @@ func TestRealtimeDuplexOpenSessionSendsCreate(t *testing.T) {
 	}
 	if event.Extension.Dialog.Extra.EnableMusic == nil || *event.Extension.Dialog.Extra.EnableMusic {
 		t.Fatalf("enable_music = %v, want false", event.Extension.Dialog.Extra.EnableMusic)
+	}
+	if event.Extension.Dialog.Extra.EnableConversationTruncate == nil || !*event.Extension.Dialog.Extra.EnableConversationTruncate {
+		t.Fatalf("enable_conversation_truncate = %v, want true", event.Extension.Dialog.Extra.EnableConversationTruncate)
 	}
 }
 
@@ -334,8 +393,4 @@ func assertEventType(t *testing.T, payload []byte, want string) {
 	if event.Type != want {
 		t.Fatalf("event type = %q, want %s; payload=%s", event.Type, want, payload)
 	}
-}
-
-func boolPtr(v bool) *bool {
-	return &v
 }

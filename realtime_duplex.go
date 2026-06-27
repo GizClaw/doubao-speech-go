@@ -228,8 +228,34 @@ func (s *RealtimeDuplexSession) sendSessionEvent(ctx context.Context, eventType 
 		Type:      eventType,
 		EventID:   util.NewReqID("duplex-event"),
 		Session:   cfg.Session,
-		Extension: cfg.Extension,
+		Extension: buildRealtimeDuplexExtensionPayload(cfg.Extension),
 	})
+}
+
+func buildRealtimeDuplexExtensionPayload(ext *RealtimeDuplexExtension) map[string]any {
+	if ext == nil {
+		return nil
+	}
+	payload := map[string]any{}
+	if ext.ASR != nil {
+		if asr := buildRealtimeASRPayload(*ext.ASR); len(asr) > 0 {
+			payload["asr"] = asr
+		}
+	}
+	if ext.TTS != nil {
+		if tts := buildRealtimeTTSPayload(*ext.TTS); len(tts) > 0 {
+			payload["tts"] = tts
+		}
+	}
+	if ext.Dialog != nil {
+		if dialog := buildRealtimeDialogPayload(*ext.Dialog); len(dialog) > 0 {
+			payload["dialog"] = dialog
+		}
+	}
+	if len(payload) == 0 {
+		return nil
+	}
+	return payload
 }
 
 func (s *RealtimeDuplexSession) sendSimpleEvent(ctx context.Context, eventType string) error {

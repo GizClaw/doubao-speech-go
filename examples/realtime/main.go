@@ -43,6 +43,7 @@ func main() {
 	appID := firstNonEmpty(os.Getenv("DOUBAO_APP_ID"), os.Getenv("DOUBAO_REALTIME_APP_ID"))
 	apiKey := firstNonEmpty(os.Getenv("DOUBAO_API_KEY"), os.Getenv("DOUBAO_REALTIME_API_KEY"))
 	resourceID := firstNonEmpty(os.Getenv("DOUBAO_REALTIME_RESOURCE_ID"), doubaospeech.ResourceRealtime)
+	searchAPIKey := strings.TrimSpace(os.Getenv("DOUBAO_VOLC_WEBSEARCH_API_KEY"))
 	if appID == "" || apiKey == "" {
 		fmt.Fprintln(os.Stderr, "missing DOUBAO_APP_ID/DOUBAO_REALTIME_APP_ID or DOUBAO_API_KEY/DOUBAO_REALTIME_API_KEY")
 		os.Exit(2)
@@ -63,6 +64,26 @@ func main() {
 	cfg.TTS.Speaker = strings.TrimSpace(speaker)
 	cfg.InputMode = inputMode
 	cfg.Model = modelVersion
+	enableCustomVAD := true
+	enableASRTwopass := false
+	cfg.ASR.AudioInfo = &doubaospeech.RealtimeASRAudioInfo{
+		Format:     doubaospeech.FormatPCM,
+		SampleRate: doubaospeech.SampleRate16000,
+		Channel:    1,
+	}
+	cfg.ASR.Extra = &doubaospeech.RealtimeASRExtra{
+		EndSmoothWindowMS: 1500,
+		EnableCustomVAD:   &enableCustomVAD,
+		EnableASRTwopass:  &enableASRTwopass,
+		Context: &doubaospeech.RealtimeASRContext{
+			Hotwords: []doubaospeech.RealtimeHotword{{Word: "豆包"}, {Word: "火山引擎"}},
+		},
+	}
+	cfg.Dialog.DialogID = strings.TrimSpace(os.Getenv("DOUBAO_REALTIME_DIALOG_ID"))
+	cfg.Dialog.Location = &doubaospeech.RealtimeLocation{City: "深圳", Country: "中国", CountryCode: "CN"}
+	cfg.Dialog.Extra = realtimeDialogExtra(searchAPIKey)
+	cfg.TTS.AudioConfig.SpeechRate = 0
+	cfg.TTS.AudioConfig.LoudnessRate = 0
 	cfg.EventBuffer = 1024
 	cfg.BackpressureTimeout = 30 * time.Second
 	cfg.Prompt = doubaospeech.RealtimePromptConfig{
@@ -101,6 +122,25 @@ func main() {
 	}
 
 	closeSession(session)
+}
+
+func realtimeDialogExtra(searchAPIKey string) *doubaospeech.RealtimeDialogExtra {
+	enableLoudnessNorm := true
+	enableUserQueryExit := true
+	extra := &doubaospeech.RealtimeDialogExtra{
+		AuditResponse:       "抱歉，这个问题我无法回答，你可以换个其他话题。",
+		EnableLoudnessNorm:  &enableLoudnessNorm,
+		EnableUserQueryExit: &enableUserQueryExit,
+	}
+	if searchAPIKey != "" {
+		enableWebsearch := true
+		extra.EnableVolcWebsearch = &enableWebsearch
+		extra.VolcWebsearchType = "web"
+		extra.VolcWebsearchAPIKey = searchAPIKey
+		extra.VolcWebsearchResultCount = 3
+		extra.VolcWebsearchNoResultMessage = "没有找到相关搜索结果。"
+	}
+	return extra
 }
 
 func runTextScenario(ctx context.Context, session *doubaospeech.RealtimeSession, round1, round2 string) error {

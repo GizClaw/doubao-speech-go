@@ -60,7 +60,7 @@ type realtimeDuplexSessionEvent struct {
 	Type      string                      `json:"type"`
 	EventID   string                      `json:"event_id,omitempty"`
 	Session   RealtimeDuplexSessionConfig `json:"session"`
-	Extension *RealtimeDuplexExtension    `json:"extension,omitempty"`
+	Extension map[string]any              `json:"extension,omitempty"`
 }
 
 type realtimeDuplexSimpleEvent struct {

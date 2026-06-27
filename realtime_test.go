@@ -102,8 +102,43 @@ func TestRealtimeStartPayloadIncludesTypedModeModelAndRates(t *testing.T) {
 	cfg := DefaultRealtimeConfig()
 	cfg.InputMode = RealtimeInputModePushToTalk
 	cfg.Model = RealtimeModelVersion("O")
+	cfg.ASR.AudioInfo = &RealtimeASRAudioInfo{Format: FormatSpeechOpus, SampleRate: SampleRate16000, Channel: 1}
+	cfg.ASR.Extra = &RealtimeASRExtra{
+		EndSmoothWindowMS: 1500,
+		EnableCustomVAD:   new(true),
+		EnableASRTwopass:  new(false),
+		Context: &RealtimeASRContext{
+			Hotwords:     []RealtimeHotword{{Word: "豆包"}},
+			CorrectWords: map[string]string{"火山": "火山引擎"},
+		},
+	}
 	cfg.TTS.AudioConfig.SpeechRate = 12
 	cfg.TTS.AudioConfig.LoudnessRate = -5
+	cfg.TTS.Extra = &RealtimeTTSExtra{
+		ExplicitDialect: "sichuan",
+		AIGCMetadata: &RealtimeAIGCMetadata{
+			Enable:          new(true),
+			ContentProducer: "producer",
+			ProduceID:       "produce-1",
+		},
+		TTS20Model: "expressive",
+	}
+	cfg.Dialog.DialogID = "dialog-1"
+	cfg.Dialog.Location = &RealtimeLocation{City: "北京", CountryCode: "CN"}
+	cfg.Dialog.DialogContext = []RealtimeDialogContextItem{{Role: "user", Text: "你好", Timestamp: 1}}
+	cfg.Dialog.Extra = &RealtimeDialogExtra{
+		StrictAudit:                new(false),
+		AuditResponse:              "blocked",
+		EnableVolcWebsearch:        new(true),
+		VolcWebsearchType:          "web_agent",
+		VolcWebsearchAPIKey:        "search-key",
+		VolcWebsearchBotID:         "bot-1",
+		VolcWebsearchResultCount:   3,
+		EnableMusic:                new(false),
+		EnableLoudnessNorm:         new(true),
+		EnableConversationTruncate: new(true),
+		EnableUserQueryExit:        new(true),
+	}
 
 	normalized, err := normalizeRealtimeConfig(&cfg)
 	if err != nil {
@@ -119,13 +154,43 @@ func TestRealtimeStartPayloadIncludesTypedModeModelAndRates(t *testing.T) {
 		t.Fatalf("unmarshal payload: %v", err)
 	}
 
+	asr := payload["asr"].(map[string]any)
+	audioInfo := asr["audio_info"].(map[string]any)
+	if got := audioInfo["format"]; got != "speech_opus" {
+		t.Fatalf("asr audio format = %v, want speech_opus", got)
+	}
+	asrExtra := asr["extra"].(map[string]any)
+	if got := asrExtra["enable_asr_twopass"]; got != false {
+		t.Fatalf("enable_asr_twopass = %v, want false", got)
+	}
+	asrContext := asrExtra["context"].(map[string]any)
+	if _, ok := asrContext["hotwords"]; !ok {
+		t.Fatalf("asr hotwords missing")
+	}
+
 	dialog := payload["dialog"].(map[string]any)
+	if got := dialog["dialog_id"]; got != "dialog-1" {
+		t.Fatalf("dialog_id = %v, want dialog-1", got)
+	}
+	location := dialog["location"].(map[string]any)
+	if got := location["city"]; got != "北京" {
+		t.Fatalf("location.city = %v, want 北京", got)
+	}
+	if _, ok := dialog["dialog_context"]; !ok {
+		t.Fatalf("dialog_context missing")
+	}
 	dialogExtra := dialog["extra"].(map[string]any)
 	if got := dialogExtra["input_mod"]; got != string(RealtimeInputModePushToTalk) {
 		t.Fatalf("input_mod = %v, want %s", got, RealtimeInputModePushToTalk)
 	}
 	if got := dialogExtra["model"]; got != string(RealtimeModelO20) {
 		t.Fatalf("model = %v, want %s", got, RealtimeModelO20)
+	}
+	if got := dialogExtra["strict_audit"]; got != false {
+		t.Fatalf("strict_audit = %v, want false", got)
+	}
+	if got := dialogExtra["enable_volc_websearch"]; got != true {
+		t.Fatalf("enable_volc_websearch = %v, want true", got)
 	}
 
 	tts := payload["tts"].(map[string]any)
@@ -142,11 +207,18 @@ func TestRealtimeStartPayloadIncludesTypedModeModelAndRates(t *testing.T) {
 	if got := audioConfig["loudness_rate"]; got != float64(-5) {
 		t.Fatalf("loudness_rate = %v, want -5", got)
 	}
+	ttsExtra := tts["extra"].(map[string]any)
+	if got := ttsExtra["explicit_dialect"]; got != "sichuan" {
+		t.Fatalf("explicit_dialect = %v, want sichuan", got)
+	}
+	if got := ttsExtra["tts_2.0_model"]; got != "expressive" {
+		t.Fatalf("tts_2.0_model = %v, want expressive", got)
+	}
 }
 
 func TestRealtimeConfigsDoNotExposeRequestPassthroughMaps(t *testing.T) {
-	assertNoAnyMapFields(t, reflect.TypeOf(RealtimeConfig{}), "RealtimeConfig", map[reflect.Type]bool{})
-	assertNoAnyMapFields(t, reflect.TypeOf(RealtimeDuplexConfig{}), "RealtimeDuplexConfig", map[reflect.Type]bool{})
+	assertNoAnyMapFields(t, reflect.TypeFor[RealtimeConfig](), "RealtimeConfig", map[reflect.Type]bool{})
+	assertNoAnyMapFields(t, reflect.TypeFor[RealtimeDuplexConfig](), "RealtimeDuplexConfig", map[reflect.Type]bool{})
 }
 
 func TestRealtimeConfigValidationRejectsInvalidTypedFields(t *testing.T) {
@@ -233,6 +305,81 @@ func TestRealtimeControlEventsUseUpdatedAPI(t *testing.T) {
 	}
 }
 
+func TestRealtimeDocumentedSessionEvents(t *testing.T) {
+	session, conn := newOpenedRealtimeSessionForTest(t, nil)
+	defer session.Close()
+
+	if err := session.UpdateConfig(context.Background(), RealtimeUpdateConfig{
+		TTS: &RealtimeTTSConfig{
+			Speaker: "zh_female_vv_jupiter_bigtts",
+			AudioConfig: RealtimeAudioConfig{
+				SpeechRate:   5,
+				LoudnessRate: 6,
+			},
+		},
+		Dialog: &RealtimeDialogConfig{
+			DialogID: "dialog-1",
+			Location: &RealtimeLocation{City: "上海"},
+		},
+	}); err != nil {
+		t.Fatalf("UpdateConfig error = %v", err)
+	}
+	if err := session.SendRAGText(context.Background(), `[{"title":"t","content":"c"}]`); err != nil {
+		t.Fatalf("SendRAGText error = %v", err)
+	}
+	if err := session.CreateConversationItems(context.Background(), RealtimeConversationItem{Role: "user", Text: "q", Timestamp: 1}, RealtimeConversationItem{Role: "assistant", Text: "a", Timestamp: 2}); err != nil {
+		t.Fatalf("CreateConversationItems error = %v", err)
+	}
+	if err := session.UpdateConversationItems(context.Background(), RealtimeConversationItem{ItemID: "item-1", Text: "updated"}); err != nil {
+		t.Fatalf("UpdateConversationItems error = %v", err)
+	}
+	if err := session.RetrieveConversationItems(context.Background()); err != nil {
+		t.Fatalf("RetrieveConversationItems latest error = %v", err)
+	}
+	if err := session.RetrieveConversationItems(context.Background(), "item-1"); err != nil {
+		t.Fatalf("RetrieveConversationItems error = %v", err)
+	}
+	if err := session.TruncateConversationItem(context.Background(), "item-1", 1200); err != nil {
+		t.Fatalf("TruncateConversationItem error = %v", err)
+	}
+	if err := session.DeleteConversationItems(context.Background(), "item-1"); err != nil {
+		t.Fatalf("DeleteConversationItems error = %v", err)
+	}
+
+	writes := conn.writesSnapshot()
+	wantEvents := []int32{
+		realtimeUpdateConfigEvent,
+		realtimeRAGTextEvent,
+		realtimeConversationCreate,
+		realtimeConversationUpdate,
+		realtimeConversationRetrieve,
+		realtimeConversationRetrieve,
+		realtimeConversationTruncate,
+		realtimeConversationDelete,
+	}
+	if len(writes) < len(wantEvents)+2 {
+		t.Fatalf("writes count = %d, want >= %d", len(writes), len(wantEvents)+2)
+	}
+	for i, want := range wantEvents {
+		frame, err := protocol.ParseServerFrame(writes[len(writes)-len(wantEvents)+i])
+		if err != nil {
+			t.Fatalf("parse frame %d: %v", i, err)
+		}
+		if frame.Event != want {
+			t.Fatalf("frame %d event = %d, want %d", i, frame.Event, want)
+		}
+		if i == 4 {
+			var payload map[string]any
+			if err := json.Unmarshal(frame.Payload, &payload); err != nil {
+				t.Fatalf("unmarshal retrieve-latest payload: %v", err)
+			}
+			if _, ok := payload["items"]; ok {
+				t.Fatalf("retrieve-latest payload contains items: %s", frame.Payload)
+			}
+		}
+	}
+}
+
 func TestRealtimeSendTTSTextUsesStartEndProtocol(t *testing.T) {
 	session, conn := newOpenedRealtimeSessionForTest(t, nil)
 	defer session.Close()
@@ -297,6 +444,7 @@ func TestRealtimeDecodeUpdatedPayloadFields(t *testing.T) {
 		"reply_id":"r-1",
 		"tts_type":"default",
 		"status_code":"20000002",
+		"dialog_id":"dialog-1",
 		"usage":{"input_text_tokens":1,"output_text_tokens":2},
 		"results":[{"text":"recognized","is_interim":false}]
 	}`)
@@ -310,6 +458,9 @@ func TestRealtimeDecodeUpdatedPayloadFields(t *testing.T) {
 	}
 	if evt.QuestionID != "q-1" || evt.ReplyID != "r-1" || evt.TTSType != "default" || evt.StatusCode != "20000002" {
 		t.Fatalf("event metadata = %+v", evt)
+	}
+	if evt.DialogID != "dialog-1" {
+		t.Fatalf("dialog_id = %q, want dialog-1", evt.DialogID)
 	}
 	if evt.Usage == nil || evt.Usage.InputTextTokens != 1 || evt.Usage.OutputTextTokens != 2 {
 		t.Fatalf("usage = %+v", evt.Usage)
@@ -618,9 +769,8 @@ func assertNoAnyMapFields(t *testing.T, typ reflect.Type, path string, seen map[
 	}
 	seen[typ] = true
 
-	anyType := reflect.TypeOf((*any)(nil)).Elem()
-	for i := range typ.NumField() {
-		field := typ.Field(i)
+	anyType := reflect.TypeFor[any]()
+	for field := range typ.Fields() {
 		fieldPath := path + "." + field.Name
 		fieldType := field.Type
 		if fieldType.Kind() == reflect.Map && fieldType.Key().Kind() == reflect.String && fieldType.Elem() == anyType {

@@ -19,15 +19,22 @@ import (
 )
 
 const (
-	realtimeEndpointPath             = "/api/v3/realtime/dialogue"
-	realtimeStartSessionEvent  int32 = 100
-	realtimeFinishSessionEvent int32 = 102
-	realtimeTaskAudioEvent     int32 = 200
-	realtimeSayHelloEvent      int32 = 300
-	realtimeEndASREvent        int32 = 400
-	realtimeTTSTextEvent       int32 = 500
-	realtimeUserTextEvent      int32 = 501
-	realtimeClientInterrupt    int32 = 515
+	realtimeEndpointPath               = "/api/v3/realtime/dialogue"
+	realtimeStartSessionEvent    int32 = 100
+	realtimeFinishSessionEvent   int32 = 102
+	realtimeTaskAudioEvent       int32 = 200
+	realtimeUpdateConfigEvent    int32 = 201
+	realtimeSayHelloEvent        int32 = 300
+	realtimeEndASREvent          int32 = 400
+	realtimeTTSTextEvent         int32 = 500
+	realtimeUserTextEvent        int32 = 501
+	realtimeRAGTextEvent         int32 = 502
+	realtimeConversationCreate   int32 = 510
+	realtimeConversationUpdate   int32 = 511
+	realtimeConversationRetrieve int32 = 512
+	realtimeConversationTruncate int32 = 513
+	realtimeConversationDelete   int32 = 514
+	realtimeClientInterrupt      int32 = 515
 
 	defaultRealtimeEventBuffer         = 64
 	defaultRealtimeBackpressureTimeout = 2 * time.Second
@@ -380,6 +387,110 @@ func (s *RealtimeSession) Interrupt(ctx context.Context) error {
 		return err
 	}
 	return s.sendJSONEvent(ctx, realtimeClientInterrupt, map[string]any{})
+}
+
+// UpdateConfig sends a full-replacement UpdateConfig request (event=201).
+func (s *RealtimeSession) UpdateConfig(ctx context.Context, cfg RealtimeUpdateConfig) error {
+	if err := s.guardSend(ctx); err != nil {
+		return err
+	}
+	payload, err := buildRealtimeUpdateConfigPayload(cfg)
+	if err != nil {
+		return err
+	}
+	return s.sendJSONEvent(ctx, realtimeUpdateConfigEvent, payload)
+}
+
+// SendRAGText sends external RAG text to the model (event=502).
+func (s *RealtimeSession) SendRAGText(ctx context.Context, externalRAG string) error {
+	if strings.TrimSpace(externalRAG) == "" {
+		return newAPIError(CodeParamError, "external_rag is empty")
+	}
+	if err := s.guardSend(ctx); err != nil {
+		return err
+	}
+	s.resetTurnFinalState()
+	return s.sendJSONEvent(ctx, realtimeRAGTextEvent, map[string]any{"external_rag": externalRAG})
+}
+
+// CreateConversationItems appends server-side conversation context items (event=510).
+func (s *RealtimeSession) CreateConversationItems(ctx context.Context, items ...RealtimeConversationItem) error {
+	if len(items) == 0 {
+		return newAPIError(CodeParamError, "conversation items are empty")
+	}
+	if err := s.guardSend(ctx); err != nil {
+		return err
+	}
+	return s.sendJSONEvent(ctx, realtimeConversationCreate, map[string]any{"items": items})
+}
+
+// UpdateConversationItems updates server-side conversation context items (event=511).
+func (s *RealtimeSession) UpdateConversationItems(ctx context.Context, items ...RealtimeConversationItem) error {
+	if len(items) == 0 {
+		return newAPIError(CodeParamError, "conversation items are empty")
+	}
+	if err := s.guardSend(ctx); err != nil {
+		return err
+	}
+	return s.sendJSONEvent(ctx, realtimeConversationUpdate, map[string]any{"items": items})
+}
+
+// RetrieveConversationItems retrieves server-side conversation context (event=512).
+// Call with no item IDs to retrieve the latest complete context.
+func (s *RealtimeSession) RetrieveConversationItems(ctx context.Context, itemIDs ...string) error {
+	if err := s.guardSend(ctx); err != nil {
+		return err
+	}
+	items := make([]RealtimeConversationItem, 0, len(itemIDs))
+	for _, itemID := range itemIDs {
+		itemID = strings.TrimSpace(itemID)
+		if itemID != "" {
+			items = append(items, RealtimeConversationItem{ItemID: itemID})
+		}
+	}
+	if len(items) == 0 {
+		return s.sendJSONEvent(ctx, realtimeConversationRetrieve, map[string]any{})
+	}
+	return s.sendJSONEvent(ctx, realtimeConversationRetrieve, map[string]any{"items": items})
+}
+
+// TruncateConversationItem truncates one server-side context item by played audio duration (event=513).
+func (s *RealtimeSession) TruncateConversationItem(ctx context.Context, itemID string, audioEndMS int) error {
+	itemID = strings.TrimSpace(itemID)
+	if itemID == "" {
+		return newAPIError(CodeParamError, "item_id is empty")
+	}
+	if audioEndMS < 0 {
+		return newAPIError(CodeParamError, "audio_end_ms must be >= 0")
+	}
+	if err := s.guardSend(ctx); err != nil {
+		return err
+	}
+	return s.sendJSONEvent(ctx, realtimeConversationTruncate, map[string]any{
+		"item_id":      itemID,
+		"audio_end_ms": audioEndMS,
+	})
+}
+
+// DeleteConversationItems deletes server-side conversation context items (event=514).
+func (s *RealtimeSession) DeleteConversationItems(ctx context.Context, itemIDs ...string) error {
+	if len(itemIDs) == 0 {
+		return newAPIError(CodeParamError, "item_ids are empty")
+	}
+	if err := s.guardSend(ctx); err != nil {
+		return err
+	}
+	items := make([]RealtimeConversationItem, 0, len(itemIDs))
+	for _, itemID := range itemIDs {
+		itemID = strings.TrimSpace(itemID)
+		if itemID != "" {
+			items = append(items, RealtimeConversationItem{ItemID: itemID})
+		}
+	}
+	if len(items) == 0 {
+		return newAPIError(CodeParamError, "item_ids are empty")
+	}
+	return s.sendJSONEvent(ctx, realtimeConversationDelete, map[string]any{"items": items})
 }
 
 // FinishSession ends the current session while leaving the websocket connection reusable (event=102).
@@ -856,6 +967,36 @@ func normalizeRealtimeConfig(cfg *RealtimeConfig) (RealtimeConfig, error) {
 	if err := validateRealtimeRate("loudness_rate", base.TTS.AudioConfig.LoudnessRate); err != nil {
 		return base, err
 	}
+	if base.ASR.AudioInfo != nil {
+		if base.ASR.AudioInfo.Format != "" {
+			if base.ASR.AudioInfo.Format != FormatSpeechOpus {
+				if err := util.ValidateFormat(string(base.ASR.AudioInfo.Format)); err != nil {
+					return base, newAPIError(CodeParamError, err.Error())
+				}
+			}
+			if base.ASR.AudioInfo.Format == FormatSpeechOpus && base.ASR.AudioInfo.SampleRate != 0 && base.ASR.AudioInfo.SampleRate != SampleRate16000 {
+				return base, newAPIError(CodeParamError, "speech_opus sample_rate must be 16000")
+			}
+		}
+		if base.ASR.AudioInfo.SampleRate != 0 {
+			if err := util.ValidateSampleRate(int(base.ASR.AudioInfo.SampleRate)); err != nil {
+				return base, newAPIError(CodeParamError, err.Error())
+			}
+		}
+		if base.ASR.AudioInfo.Channel != 0 {
+			if err := util.ValidateChannel(base.ASR.AudioInfo.Channel); err != nil {
+				return base, newAPIError(CodeParamError, err.Error())
+			}
+		}
+	}
+	if base.ASR.Extra != nil && base.ASR.Extra.EndSmoothWindowMS != 0 {
+		if base.ASR.Extra.EndSmoothWindowMS < 500 || base.ASR.Extra.EndSmoothWindowMS > 50000 {
+			return base, newAPIError(CodeParamError, "asr.extra.end_smooth_window_ms must be between 500 and 50000")
+		}
+	}
+	if base.Dialog.Extra != nil && base.Dialog.Extra.VolcWebsearchResultCount > 10 {
+		return base, newAPIError(CodeParamError, "dialog.extra.volc_websearch_result_count must be <= 10")
+	}
 
 	base.History = cloneConversationHistory(base.History)
 	base.Prompt = clonePromptConfig(base.Prompt)
@@ -866,9 +1007,7 @@ func normalizeRealtimeConfig(cfg *RealtimeConfig) (RealtimeConfig, error) {
 
 func buildRealtimeStartPayload(cfg RealtimeConfig) ([]byte, error) {
 	payload := map[string]any{
-		"asr": map[string]any{
-			"language": cfg.ASR.Language,
-		},
+		"asr": buildRealtimeASRPayload(cfg.ASR),
 		"tts": map[string]any{
 			"speaker": cfg.TTS.Speaker,
 			"audio_config": map[string]any{
@@ -889,8 +1028,16 @@ func buildRealtimeStartPayload(cfg RealtimeConfig) ([]byte, error) {
 	if cfg.TTS.AudioConfig.LoudnessRate != 0 {
 		ttsAudio["loudness_rate"] = cfg.TTS.AudioConfig.LoudnessRate
 	}
+	if cfg.TTS.Extra != nil {
+		if extra := structToMap(cfg.TTS.Extra); len(extra) > 0 {
+			tts["extra"] = extra
+		}
+	}
 
 	dialog := payload["dialog"].(map[string]any)
+	if cfg.Dialog.DialogID != "" {
+		dialog["dialog_id"] = cfg.Dialog.DialogID
+	}
 	if cfg.Dialog.BotName != "" {
 		dialog["bot_name"] = cfg.Dialog.BotName
 	}
@@ -903,14 +1050,22 @@ func buildRealtimeStartPayload(cfg RealtimeConfig) ([]byte, error) {
 	if cfg.Dialog.CharacterManifest != "" {
 		dialog["character_manifest"] = cfg.Dialog.CharacterManifest
 	}
-	if cfg.InputMode != RealtimeInputModeDefault || cfg.Model != "" {
-		dialogExtra := map[string]any{}
-		if cfg.InputMode != RealtimeInputModeDefault {
-			dialogExtra["input_mod"] = string(cfg.InputMode)
+	if cfg.Dialog.Location != nil {
+		if location := structToMap(cfg.Dialog.Location); len(location) > 0 {
+			dialog["location"] = location
 		}
-		if cfg.Model != "" {
-			dialogExtra["model"] = string(cfg.Model)
-		}
+	}
+	if len(cfg.Dialog.DialogContext) > 0 {
+		dialog["dialog_context"] = cfg.Dialog.DialogContext
+	}
+	dialogExtra := structToMap(cfg.Dialog.Extra)
+	if cfg.InputMode != RealtimeInputModeDefault {
+		dialogExtra["input_mod"] = string(cfg.InputMode)
+	}
+	if cfg.Model != "" {
+		dialogExtra["model"] = string(cfg.Model)
+	}
+	if len(dialogExtra) > 0 {
 		dialog["extra"] = dialogExtra
 	}
 
@@ -927,6 +1082,114 @@ func buildRealtimeStartPayload(cfg RealtimeConfig) ([]byte, error) {
 	return json.Marshal(payload)
 }
 
+func buildRealtimeASRPayload(cfg RealtimeASRConfig) map[string]any {
+	payload := map[string]any{}
+	if cfg.Language != "" {
+		payload["language"] = cfg.Language
+	}
+	if cfg.AudioInfo != nil {
+		if audioInfo := structToMap(cfg.AudioInfo); len(audioInfo) > 0 {
+			payload["audio_info"] = audioInfo
+		}
+	}
+	if cfg.Extra != nil {
+		if extra := structToMap(cfg.Extra); len(extra) > 0 {
+			payload["extra"] = extra
+		}
+	}
+	return payload
+}
+
+func buildRealtimeUpdateConfigPayload(cfg RealtimeUpdateConfig) (map[string]any, error) {
+	payload := map[string]any{}
+	if cfg.TTS != nil {
+		normalized := *cfg.TTS
+		if strings.TrimSpace(normalized.Speaker) == "" {
+			return nil, newAPIError(CodeParamError, "tts.speaker is required")
+		}
+		tts := buildRealtimeTTSPayload(normalized)
+		payload["tts"] = tts
+	}
+	if cfg.Dialog != nil {
+		dialog := buildRealtimeDialogPayload(*cfg.Dialog)
+		if len(dialog) > 0 {
+			payload["dialog"] = dialog
+		}
+	}
+	if len(payload) == 0 {
+		return nil, newAPIError(CodeParamError, "update config is empty")
+	}
+	return payload, nil
+}
+
+func buildRealtimeTTSPayload(cfg RealtimeTTSConfig) map[string]any {
+	tts := map[string]any{}
+	if strings.TrimSpace(cfg.Speaker) != "" {
+		tts["speaker"] = strings.TrimSpace(cfg.Speaker)
+	}
+	audioConfig := map[string]any{}
+	if cfg.AudioConfig.Channel != 0 {
+		audioConfig["channel"] = cfg.AudioConfig.Channel
+	}
+	if cfg.AudioConfig.Format != "" {
+		audioConfig["format"] = cfg.AudioConfig.Format
+	}
+	if cfg.AudioConfig.SampleRate != 0 {
+		audioConfig["sample_rate"] = cfg.AudioConfig.SampleRate
+	}
+	if cfg.AudioConfig.Bits != 0 {
+		audioConfig["bits"] = cfg.AudioConfig.Bits
+	}
+	if cfg.AudioConfig.SpeechRate != 0 {
+		audioConfig["speech_rate"] = cfg.AudioConfig.SpeechRate
+	}
+	if cfg.AudioConfig.LoudnessRate != 0 {
+		audioConfig["loudness_rate"] = cfg.AudioConfig.LoudnessRate
+	}
+	if len(audioConfig) > 0 {
+		tts["audio_config"] = audioConfig
+	}
+	if cfg.Extra != nil {
+		if extra := structToMap(cfg.Extra); len(extra) > 0 {
+			tts["extra"] = extra
+		}
+	}
+	return tts
+}
+
+func buildRealtimeDialogPayload(cfg RealtimeDialogConfig) map[string]any {
+	dialog := map[string]any{}
+	if cfg.DialogID != "" {
+		dialog["dialog_id"] = cfg.DialogID
+	}
+	if cfg.BotName != "" {
+		dialog["bot_name"] = cfg.BotName
+	}
+	if cfg.SystemRole != "" {
+		dialog["system_role"] = cfg.SystemRole
+	}
+	if cfg.SpeakingStyle != "" {
+		dialog["speaking_style"] = cfg.SpeakingStyle
+	}
+	if cfg.CharacterManifest != "" {
+		dialog["character_manifest"] = cfg.CharacterManifest
+	}
+	if cfg.Location != nil {
+		if location := structToMap(cfg.Location); len(location) > 0 {
+			dialog["location"] = location
+		}
+	}
+	if len(cfg.DialogContext) > 0 {
+		dialog["dialog_context"] = cfg.DialogContext
+	}
+	if cfg.Extra != nil {
+		if extra := structToMap(cfg.Extra); len(extra) > 0 {
+			dialog["extra"] = extra
+		}
+	}
+	return dialog
+}
+
 func decodeEventPayload(evt *RealtimeEvent) {
 	if evt == nil || len(evt.Payload) == 0 {
 		return
@@ -934,6 +1197,7 @@ func decodeEventPayload(evt *RealtimeEvent) {
 
 	var payload struct {
 		SessionID string `json:"session_id"`
+		DialogID  string `json:"dialog_id"`
 
 		Text    string `json:"text"`
 		Content string `json:"content"`
@@ -955,6 +1219,7 @@ func decodeEventPayload(evt *RealtimeEvent) {
 			Text      string `json:"text"`
 			IsInterim bool   `json:"is_interim"`
 		} `json:"results,omitempty"`
+		Items []RealtimeConversationItem `json:"items,omitempty"`
 
 		ASRInfo *struct {
 			Text    string `json:"text"`
@@ -972,6 +1237,12 @@ func decodeEventPayload(evt *RealtimeEvent) {
 
 	if payload.SessionID != "" {
 		evt.SessionID = payload.SessionID
+	}
+	if payload.DialogID != "" {
+		evt.DialogID = payload.DialogID
+	}
+	if payload.Message != "" {
+		evt.Message = payload.Message
 	}
 	meta := parseResponseMetadata(evt.Payload, responseMetadata{ReqID: evt.ReqID, TraceID: evt.TraceID, LogID: evt.LogID})
 	evt.ReqID = meta.ReqID
@@ -1000,6 +1271,9 @@ func decodeEventPayload(evt *RealtimeEvent) {
 			}
 			evt.IsFinal = evt.IsFinal || !result.IsInterim
 		}
+	}
+	if len(payload.Items) > 0 {
+		evt.Items = payload.Items
 	}
 
 	if payload.ASRInfo != nil {
@@ -1101,6 +1375,29 @@ func hasRealtimeProps(props RealtimeGenerationProps) bool {
 		props.MaxTokens != 0 ||
 		props.PresencePenalty != 0 ||
 		props.FrequencyPenalty != 0
+}
+
+func structToMap(v any) map[string]any {
+	if v == nil {
+		return map[string]any{}
+	}
+	raw, err := json.Marshal(v)
+	if err != nil {
+		return map[string]any{}
+	}
+	out := map[string]any{}
+	if err := json.Unmarshal(raw, &out); err != nil {
+		return map[string]any{}
+	}
+	if out == nil {
+		return map[string]any{}
+	}
+	for key, value := range out {
+		if value == nil {
+			delete(out, key)
+		}
+	}
+	return out
 }
 
 func cloneConversationHistory(history []RealtimeConversationMessage) []RealtimeConversationMessage {

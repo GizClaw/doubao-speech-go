@@ -82,7 +82,7 @@ func run(args []string) error {
 	duplexCfg.Session.Instructions = duplexInstructions()
 	duplexCfg.Session.Audio.Output.Voice = cfg.DuplexVoice
 	duplexCfg.Session.Tools = demoTools()
-	duplexCfg.Extension = demoDuplexExtension()
+	duplexCfg.Extension = demoDuplexExtension(cfg.DuplexVoice, strings.TrimSpace(os.Getenv("DOUBAO_VOLC_WEBSEARCH_API_KEY")))
 
 	duplexSession, err := clients.duplex.RealtimeDuplex.OpenSession(ctx, &duplexCfg)
 	if err != nil {
@@ -119,10 +119,12 @@ func run(args []string) error {
 		transcript, err := transcribePCM(turnCtx, clients.asr, duplexResult.Audio, doubaospeech.SampleRate24000)
 		cancel()
 		if err != nil {
-			return fmt.Errorf("round %d transcribe duplex audio: %w", round, err)
+			fmt.Printf("[round %d][asr.warning] transcript skipped: %v\n", round, err)
+			transcript = duplexResult.Text
+		} else {
+			fmt.Printf("[round %d][asr.transcript] %s\n", round, transcript)
 		}
 		duplexResult.Transcript = transcript
-		fmt.Printf("[round %d][asr.transcript] %s\n", round, transcript)
 
 		if cfg.OutDir != "" {
 			if err := writeRoundArtifacts(cfg.OutDir, round, oldResult.Audio, duplexResult.Audio, transcript); err != nil {
@@ -392,16 +394,49 @@ func demoTools() []doubaospeech.RealtimeDuplexFunctionTool {
 	}
 }
 
-func demoDuplexExtension() *doubaospeech.RealtimeDuplexExtension {
+func demoDuplexExtension(voice string, searchAPIKey string) *doubaospeech.RealtimeDuplexExtension {
 	enableLoudnessNorm := true
 	enableMusic := false
+	enableUserQueryExit := true
+	enableASRTwopass := false
+	extra := &doubaospeech.RealtimeDuplexDialogExtra{
+		AuditResponse:       "抱歉，这个问题我无法回答，你可以换个其他话题。",
+		EnableLoudnessNorm:  &enableLoudnessNorm,
+		EnableMusic:         &enableMusic,
+		EnableUserQueryExit: &enableUserQueryExit,
+	}
+	if searchAPIKey != "" {
+		enableWebsearch := true
+		extra.EnableVolcWebsearch = &enableWebsearch
+		extra.VolcWebsearchType = "web"
+		extra.VolcWebsearchAPIKey = searchAPIKey
+		extra.VolcWebsearchResultCount = 3
+		extra.VolcWebsearchNoResultMessage = "没有找到相关搜索结果。"
+	}
 	return &doubaospeech.RealtimeDuplexExtension{
-		Dialog: &doubaospeech.RealtimeDuplexDialogExtension{
-			Extra: &doubaospeech.RealtimeDuplexDialogExtra{
-				AuditResponse:      "抱歉，这个问题我无法回答，你可以换个其他话题。",
-				EnableLoudnessNorm: &enableLoudnessNorm,
-				EnableMusic:        &enableMusic,
+		ASR: &doubaospeech.RealtimeASRConfig{
+			AudioInfo: &doubaospeech.RealtimeASRAudioInfo{
+				Format:     doubaospeech.FormatPCM,
+				SampleRate: doubaospeech.SampleRate16000,
+				Channel:    1,
 			},
+			Extra: &doubaospeech.RealtimeASRExtra{
+				EnableASRTwopass: &enableASRTwopass,
+				Context: &doubaospeech.RealtimeASRContext{
+					Hotwords: []doubaospeech.RealtimeHotword{{Word: "lookup_weather"}, {Word: "深圳"}},
+				},
+			},
+		},
+		TTS: &doubaospeech.RealtimeTTSConfig{
+			Speaker: strings.TrimSpace(voice),
+			AudioConfig: doubaospeech.RealtimeAudioConfig{
+				SpeechRate:   0,
+				LoudnessRate: 0,
+			},
+		},
+		Dialog: &doubaospeech.RealtimeDuplexDialogExtension{
+			Location: &doubaospeech.RealtimeLocation{City: "深圳", Country: "中国", CountryCode: "CN"},
+			Extra:    extra,
 		},
 	}
 }

@@ -56,20 +56,16 @@ type RealtimeDuplexAudioFormat struct {
 // RealtimeDuplexExtension carries the typed extension fields supported by this
 // SDK. Unknown provider fields are intentionally not exposed as public API.
 type RealtimeDuplexExtension struct {
+	ASR    *RealtimeASRConfig             `json:"asr,omitempty"`
+	TTS    *RealtimeTTSConfig             `json:"tts,omitempty"`
 	Dialog *RealtimeDuplexDialogExtension `json:"dialog,omitempty"`
 }
 
 // RealtimeDuplexDialogExtension configures dialogue-specific extensions.
-type RealtimeDuplexDialogExtension struct {
-	Extra *RealtimeDuplexDialogExtra `json:"extra,omitempty"`
-}
+type RealtimeDuplexDialogExtension = RealtimeDialogConfig
 
-// RealtimeDuplexDialogExtra configures supported dialogue extra fields.
-type RealtimeDuplexDialogExtra struct {
-	AuditResponse      string `json:"audit_response,omitempty"`
-	EnableLoudnessNorm *bool  `json:"enable_loudness_norm,omitempty"`
-	EnableMusic        *bool  `json:"enable_music,omitempty"`
-}
+// RealtimeDuplexDialogExtra configures dialogue-specific extension fields.
+type RealtimeDuplexDialogExtra = RealtimeDialogExtra
 
 // RealtimeDuplexFunctionTool describes a model-callable function.
 type RealtimeDuplexFunctionTool struct {

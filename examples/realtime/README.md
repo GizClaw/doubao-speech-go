@@ -8,8 +8,9 @@ This example demonstrates one **single realtime session** with multiple turns:
 4. Update prompt before round-2
 5. Update generation props before round-2
 6. Send round-2 user message and receive events until final
-7. Trigger one `ClientInterrupt` request
-8. Close session twice to verify idempotent close
+7. Configure typed ASR/TTS/dialog extras, including optional web search
+8. Trigger one `ClientInterrupt` request
+9. Close session twice to verify idempotent close
 
 ### API coverage in this example
 
@@ -24,6 +25,8 @@ Covered directly in `main.go`:
 - `ReplaceHistory`
 - `UpdatePrompt`
 - `UpdateProps`
+- `RealtimeASRExtra`
+- `RealtimeDialogExtra`
 - `Interrupt` (`ClientInterrupt`, event `515`)
 - `Close` (idempotent)
 
@@ -39,12 +42,14 @@ Not covered in this single example (recommended scenarios):
 
 - `DOUBAO_APP_ID` or `DOUBAO_REALTIME_APP_ID`
 - `DOUBAO_API_KEY` or `DOUBAO_REALTIME_API_KEY`
+- `DOUBAO_VOLC_WEBSEARCH_API_KEY` (optional, enables typed `dialog.extra.enable_volc_websearch`)
 
 ## Run
 
 ```bash
 DOUBAO_APP_ID=<your_app_id> \
 DOUBAO_API_KEY=<your_api_key> \
+DOUBAO_VOLC_WEBSEARCH_API_KEY=<your_search_api_key> \
 go run ./examples/realtime -mode text -model 1.2.1.1
 ```
 
@@ -56,9 +61,10 @@ go run ./examples/realtime -mode text -model 1.2.1.1
 - `-round1`: first user message
 - `-round2`: second user message
 
-## Credential-backed E2E Smoke
+## API-Key-Backed E2E Smoke
 
-Use this example with local credentials for live Realtime smoke checks:
+Use this example with a local App ID config value and API key for live Realtime
+smoke checks:
 
 ```bash
 set -a

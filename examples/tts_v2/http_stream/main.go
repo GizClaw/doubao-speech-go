@@ -61,7 +61,7 @@ func main() {
 		doubaospeech.WithAPIKey(apiKey),
 	}
 
-	fmt.Printf("using auth mode=api-key resource_id=%s speaker=%s\n", resourceID, speaker)
+	fmt.Printf("using api-key auth resource_id=%s speaker=%s\n", resourceID, speaker)
 
 	client := doubaospeech.NewClient(appID, opts...)
 

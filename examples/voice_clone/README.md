@@ -63,4 +63,4 @@ go run ./examples/voice_clone \
 - `parameter license not found for param`
   - Usually model/resource/speaker entitlement mismatch.
 - `Invalid X-Api-Key`
-  - The API key is not valid for the selected AppID or voice-clone resource.
+  - The API key is not valid for the selected App ID config value or voice-clone resource.

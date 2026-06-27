@@ -4,13 +4,14 @@ package doubaospeech
 type AudioFormat string
 
 const (
-	FormatPCM      AudioFormat = "pcm"
-	FormatPCMS16LE AudioFormat = "pcm_s16le"
-	FormatWAV      AudioFormat = "wav"
-	FormatMP3      AudioFormat = "mp3"
-	FormatOGG      AudioFormat = "ogg_opus"
-	FormatAAC      AudioFormat = "aac"
-	FormatM4A      AudioFormat = "m4a"
+	FormatPCM        AudioFormat = "pcm"
+	FormatPCMS16LE   AudioFormat = "pcm_s16le"
+	FormatWAV        AudioFormat = "wav"
+	FormatMP3        AudioFormat = "mp3"
+	FormatOGG        AudioFormat = "ogg_opus"
+	FormatAAC        AudioFormat = "aac"
+	FormatM4A        AudioFormat = "m4a"
+	FormatSpeechOpus AudioFormat = "speech_opus"
 )
 
 // SampleRate represents audio sample rate.

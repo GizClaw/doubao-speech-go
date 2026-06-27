@@ -38,31 +38,6 @@ func (c *Client) doJSONRequest(ctx context.Context, method, path string, body an
 	return c.doRequest(req, out)
 }
 
-func (c *Client) doMultipartRequest(
-	ctx context.Context,
-	method string,
-	path string,
-	fields map[string]string,
-	files []MultipartFile,
-	out any,
-	resourceID string,
-) error {
-	contentType, body, err := buildMultipartBody(fields, files)
-	if err != nil {
-		return err
-	}
-
-	endpoint := c.buildEndpoint(path)
-	req, err := http.NewRequestWithContext(ctx, method, endpoint, bytes.NewReader(body))
-	if err != nil {
-		return wrapError(err, "create request")
-	}
-	req.Header.Set("Content-Type", contentType)
-	c.applyAuthHeaders(req, path, resourceID)
-
-	return c.doRequest(req, out)
-}
-
 func (c *Client) buildEndpoint(path string) string {
 	return strings.TrimRight(c.config.baseURL, "/") + "/" + strings.TrimLeft(path, "/")
 }

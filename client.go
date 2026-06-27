@@ -112,7 +112,7 @@ func NewClient(appID string, opts ...Option) *Client {
 	return c
 }
 
-// WithAPIKey sets X-Api-Key authentication.
+// WithAPIKey sets the X-Api-Key authentication value.
 func WithAPIKey(apiKey string) Option {
 	return func(c *clientConfig) {
 		c.apiKey = apiKey
