@@ -123,11 +123,8 @@ cfg.Session.Audio.Output.Voice = "zh_female_vv_jupiter_bigtts"
 ## Extension Fields
 
 Upstream describes `extension` as model-specific `asr`, `tts`, and `dialog`
-configuration whose internal structure follows the old end-to-end realtime
-`StartSessionPayload`.
-
-The SDK intentionally does not expose arbitrary extension maps. Public extension
-fields must be typed so callers know which provider fields are supported.
+configuration. The public SDK surface is limited to the typed extension fields
+listed below so callers can see exactly which provider fields are supported.
 
 Supported extension fields:
 
@@ -147,9 +144,9 @@ Supported extension fields:
 | `extension.dialog.extra.enable_volc_websearch` | `RealtimeDuplexDialogExtra.EnableVolcWebsearch` | `*bool` | service default | Enables built-in web search when set. |
 | `extension.dialog.extra.volc_websearch_api_key` | `RealtimeDuplexDialogExtra.VolcWebsearchAPIKey` | string | empty | Search API key. Read it from environment; do not hardcode it. |
 
-No stable SDK fields are currently exposed under `extension.s2s` or top-level
-`extension.extra`. If upstream fields are needed, add typed structs and tests
-before exposing them.
+`extension.s2s` and top-level `extension.extra` are not implemented. If those
+fields are needed later, add typed structs and tests before adding them to the
+public SDK surface.
 
 Core Duplex concepts should use Duplex-native fields instead of old Realtime
 extras: model and prompt use `session.model` and `session.instructions`; audio

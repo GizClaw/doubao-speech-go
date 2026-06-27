@@ -11,8 +11,8 @@ streaming-input/non-streaming-result, and an optimized bidirectional endpoint.
 | Mode | Endpoint | Upstream behavior | SDK coverage |
 | --- | --- | --- | --- |
 | Bidirectional streaming | `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel` | One response per input packet; returns recognized characters as soon as possible. | Implemented by `ASRV2.OpenStreamSession`. |
-| Streaming input / no-stream result | `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream` | Returns recognition after input audio exceeds 15 seconds or after the final negative packet; higher accuracy. | Documented, not exposed as a dedicated high-level SDK mode. |
-| Optimized bidirectional streaming | `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async` | Returns a new packet only when the result changes; upstream recommends this for better RTF and first/last-character latency. | Documented, not exposed as a dedicated high-level SDK mode. |
+| Streaming input / no-stream result | `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream` | Returns recognition after input audio exceeds 15 seconds or after the final negative packet; higher accuracy. | Documented only; no dedicated SDK method yet. |
+| Optimized bidirectional streaming | `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async` | Returns a new packet only when the result changes; upstream recommends this for better RTF and first/last-character latency. | Documented only; no dedicated SDK method yet. |
 
 Packet guidance from upstream:
 

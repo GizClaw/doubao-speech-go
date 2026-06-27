@@ -27,8 +27,7 @@ configuration used by services that still require it.
 client := doubaospeech.NewClient(appID, doubaospeech.WithAPIKey(apiKey))
 ```
 
-Use the canonical service fields below. Short aliases such as `ASR`, `TTS`,
-`AST`, and `Audio` are intentionally not exposed.
+Available service fields:
 
 | Service field | API |
 | --- | --- |
@@ -45,21 +44,21 @@ Use the canonical service fields below. Short aliases such as `ASR`, `TTS`,
 The detailed API inventory lives in [`docs/`](docs/). Current implementation
 status by interface:
 
-| API | Endpoint | SDK surface | Status | Notes |
-| --- | --- | --- | --- | --- |
-| Streaming ASR bidirectional | `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel` | `client.ASRV2.OpenStreamSession` | Implemented | Streams audio-only frames and parses full-server JSON results. Some upstream request options are not yet typed. See [`docs/streaming_asr.md`](docs/streaming_asr.md). |
-| Streaming ASR input-only result | `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream` | none | Documented only | Needs endpoint selection, final-packet behavior, and typed nostream options. |
-| Streaming ASR optimized bidirectional | `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async` | none | Documented only | Needs endpoint selection and typed async/nonstream option coverage. |
-| TTS WebSocket bidirectional | `wss://openspeech.bytedance.com/api/v3/tts/bidirection` | `client.TTSV2.OpenStreamSession` | Partially implemented | Lifecycle, text request, cancel, reuse, and audio chunks are implemented. Current config types cover `speaker`, `format`, `sample_rate`, and `resource_id`; advanced 2.0 fields still need typed options. See [`docs/tts_v2.md`](docs/tts_v2.md). |
-| TTS WebSocket unidirectional stream | `wss://openspeech.bytedance.com/api/v3/tts/unidirectional/stream` | none | Documented only | Listed in upstream TTS API inventory. |
-| TTS HTTP Chunked stream | `https://openspeech.bytedance.com/api/v3/tts/unidirectional` | `client.TTSV2.Stream` | Implemented | Streams HTTP response frames and decodes audio chunks. See [`docs/tts_v1.md`](docs/tts_v1.md). |
-| TTS HTTP SSE stream | `https://openspeech.bytedance.com/api/v3/tts/unidirectional/sse` | none | Documented only | Listed in upstream TTS API inventory. |
-| Realtime speech 1.0 | `wss://openspeech.bytedance.com/api/v3/realtime/dialogue` | `client.Realtime.OpenSession` | Implemented | Core session, typed StartSession provider fields, text/audio modes, UpdateConfig, RAG text, conversation CRUD/truncate/delete, push-to-talk, TTS text injection, parsed events, and local context helpers are implemented. See [`docs/realtime_speech.md`](docs/realtime_speech.md). |
-| Realtime full-duplex 3.0 | `wss://openspeech.bytedance.com/api/v3/duplex/realtime/dialogue` | `client.RealtimeDuplex.OpenSession` | Implemented | JSON event flow, typed `extension.asr`/`extension.tts`/`extension.dialog`, audio append/commit, replacement text, context CRUD, response cancel, function-call result return, and parsed events are implemented. See [`docs/realtime_duplex.md`](docs/realtime_duplex.md). |
-| AST simultaneous interpretation | `wss://openspeech.bytedance.com/api/v4/ast/v2/translate` | `client.ASTTranslate.OpenSession` | Implemented | Supports S2T/S2S start, audio upload, config update, finish, parsed subtitle/TTS/usage/muted events, and protobuf transport. See [`docs/simultaneous_interpretation.md`](docs/simultaneous_interpretation.md). |
-| Audio generation | `https://openspeech.bytedance.com/api/v3/tts/create` | `client.AudioGeneration.Create` | Implemented | Supports text prompts, audio/image/speaker references, audio config, watermark config, decoded audio, and temporary URL response fields. See [`docs/audio_generation.md`](docs/audio_generation.md). |
-| Voice clone legacy workflow | `/api/v1/mega_tts/audio/upload`, `/api/v1/mega_tts/status`, `/api/v1/mega_tts/audio/activate` | `client.VoiceClone.Upload`, `GetStatus`, `Activate` | Implemented | Current SDK workflow for training, polling, and activation. See [`docs/voice_clone.md`](docs/voice_clone.md). |
-| Voice clone v3 | `https://openspeech.bytedance.com/api/v3/tts/voice_clone` | none | Documented only | Needs a typed client for `speaker_id`, `custom_speaker_id`, `audio`, `extra_params`, `speaker_status`, `model_type`, and demo-audio response fields. |
+| Mark | API | Endpoint | SDK surface | Status | Notes |
+| --- | --- | --- | --- | --- | --- |
+| ✅ | Streaming ASR bidirectional | [Streaming ASR](docs/streaming_asr.md) | `client.ASRV2.OpenStreamSession` | Implemented | Streams audio-only frames and parses full-server JSON results. Some upstream request options are not yet typed. |
+| 📄 | Streaming ASR input-only result | [Streaming ASR](docs/streaming_asr.md) | none | Documented only | Needs endpoint selection, final-packet behavior, and typed nostream options. |
+| 📄 | Streaming ASR optimized bidirectional | [Streaming ASR](docs/streaming_asr.md) | none | Documented only | Needs endpoint selection and typed async/nonstream option coverage. |
+| ◐ | TTS WebSocket bidirectional | [TTS v2](docs/tts_v2.md) | `client.TTSV2.OpenStreamSession` | Partially implemented | Lifecycle, text request, cancel, reuse, and audio chunks are implemented. Current config types cover `speaker`, `format`, `sample_rate`, and `resource_id`; advanced 2.0 fields still need typed options. |
+| 📄 | TTS WebSocket unidirectional stream | [TTS v1](docs/tts_v1.md) | none | Documented only | Listed in upstream TTS API inventory. |
+| ✅ | TTS HTTP Chunked stream | [TTS v1](docs/tts_v1.md) | `client.TTSV2.Stream` | Implemented | Streams HTTP response frames and decodes audio chunks. |
+| 📄 | TTS HTTP SSE stream | [TTS v1](docs/tts_v1.md) | none | Documented only | Listed in upstream TTS API inventory. |
+| ✅ | Realtime speech 1.0 | [Realtime speech](docs/realtime_speech.md) | `client.Realtime.OpenSession` | Implemented | Core session, typed StartSession provider fields, text/audio modes, UpdateConfig, RAG text, conversation CRUD/truncate/delete, push-to-talk, TTS text injection, parsed events, and local context helpers are implemented. |
+| ✅ | Realtime full-duplex 3.0 | [Realtime duplex](docs/realtime_duplex.md) | `client.RealtimeDuplex.OpenSession` | Implemented | JSON event flow, typed `extension.asr`/`extension.tts`/`extension.dialog`, audio append/commit, replacement text, context CRUD, response cancel, function-call result return, and parsed events are implemented. |
+| ✅ | AST simultaneous interpretation | [Simultaneous interpretation](docs/simultaneous_interpretation.md) | `client.ASTTranslate.OpenSession` | Implemented | Supports S2T/S2S start, audio upload, config update, finish, parsed subtitle/TTS/usage/muted events, and protobuf transport. |
+| ✅ | Audio generation | [Audio generation](docs/audio_generation.md) | `client.AudioGeneration.Create` | Implemented | Supports text prompts, audio/image/speaker references, audio config, watermark config, decoded audio, and temporary URL response fields. |
+| ✅ | Voice clone v1 workflow | [Voice clone](docs/voice_clone.md) | `client.VoiceClone.Upload`, `GetStatus`, `Activate` | Implemented | Supports training upload, status polling, and activation. |
+| 📄 | Voice clone v3 | [Voice clone](docs/voice_clone.md) | none | Documented only | Needs a typed client for `speaker_id`, `custom_speaker_id`, `audio`, `extra_params`, `speaker_status`, `model_type`, and demo-audio response fields. |
 
 Near-term work:
 
