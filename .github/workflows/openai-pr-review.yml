@@ -1,7 +1,7 @@
 name: OpenAI PR review
 
 on:
-  pull_request:
+  pull_request_target:
     types: [opened]
   issue_comment:
     types: [created]
@@ -24,7 +24,7 @@ concurrency:
 
 jobs:
   review:
-    uses: GizClaw/github-workflows/.github/workflows/codex-openai-review.yml@0.1.2
+    uses: GizClaw/github-workflows/.github/workflows/codex-openai-review.yml@latest
     with:
       model: gpt-5.6-terra
       effort: medium
