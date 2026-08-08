@@ -16,7 +16,12 @@ import (
 const realtimeTestSpeaker = "test-speaker"
 
 func TestRealtimeOpenSessionSendsLifecycleFrames(t *testing.T) {
-	client := NewClient("test-app", WithAPIKey("key-test"), WithUserID("tester"))
+	client := NewClient(
+		"test-app",
+		WithAPIKey("key-test"),
+		WithResourceID("resource-test"),
+		WithUserID("tester"),
+	)
 	conn := newFakeWSConn()
 	dialer := &fakeDialer{conn: conn}
 
@@ -34,6 +39,26 @@ func TestRealtimeOpenSessionSendsLifecycleFrames(t *testing.T) {
 		t.Fatalf("OpenSession error = %v", err)
 	}
 	defer session.Close()
+
+	if got := dialer.headers.Get("X-Api-App-Id"); got != "test-app" {
+		t.Fatalf("X-Api-App-Id = %q, want test-app", got)
+	}
+	if got := dialer.headers.Get("X-Api-Key"); got != "key-test" {
+		t.Fatalf("X-Api-Key = %q, want key-test", got)
+	}
+	if got := dialer.headers.Get("X-Api-Resource-Id"); got != "resource-test" {
+		t.Fatalf("X-Api-Resource-Id = %q, want resource-test", got)
+	}
+	connectID := dialer.headers.Get("X-Api-Connect-Id")
+	if connectID == "" {
+		t.Fatal("X-Api-Connect-Id is empty")
+	}
+	if got := dialer.headers.Get("X-Api-Request-Id"); got != connectID {
+		t.Fatalf("X-Api-Request-Id = %q, want connect ID %q", got, connectID)
+	}
+	if got := dialer.url; got != defaultWSURL+realtimeEndpointPath {
+		t.Fatalf("websocket URL = %q, want %q", got, defaultWSURL+realtimeEndpointPath)
+	}
 
 	writes := conn.writesSnapshot()
 	if len(writes) < 2 {
@@ -57,6 +82,19 @@ func TestRealtimeOpenSessionSendsLifecycleFrames(t *testing.T) {
 	}
 	if startSessionFrame.SessionID == "" {
 		t.Fatalf("start session frame should contain session ID")
+	}
+	if startSessionFrame.ConnectID != "" {
+		t.Fatalf("start session binary connect ID = %q, want empty", startSessionFrame.ConnectID)
+	}
+	var startPayload map[string]any
+	if err := json.Unmarshal(startSessionFrame.Payload, &startPayload); err != nil {
+		t.Fatalf("unmarshal start session payload: %v", err)
+	}
+	if _, ok := startPayload["session_id"]; ok {
+		t.Fatalf("start session payload leaked binary session ID: %s", startSessionFrame.Payload)
+	}
+	if _, ok := startPayload["resource_id"]; ok {
+		t.Fatalf("start session payload leaked handshake resource ID: %s", startSessionFrame.Payload)
 	}
 }
 
@@ -222,6 +260,156 @@ func TestRealtimeStartPayloadIncludesTypedModeModelAndRates(t *testing.T) {
 	}
 }
 
+func TestRealtimeStartPayloadFullWireContract(t *testing.T) {
+	cfg := DefaultRealtimeConfig()
+	cfg.InputMode = RealtimeInputModePushToTalk
+	cfg.Model = RealtimeModelO20
+	cfg.Instructions = "system instruction"
+	cfg.ASR.AudioInfo = &RealtimeASRAudioInfo{
+		Format:     FormatSpeechOpus,
+		SampleRate: SampleRate16000,
+		Channel:    1,
+	}
+	cfg.ASR.Extra = &RealtimeASRExtra{
+		EndSmoothWindowMS:     1500,
+		EnableCustomVAD:       new(true),
+		EnableASRTwopass:      new(false),
+		BoostingTableID:       "boost-id",
+		BoostingTableName:     "boost-name",
+		RegexCorrectTableID:   "regex-id",
+		RegexCorrectTableName: "regex-name",
+		Context: &RealtimeASRContext{
+			Hotwords:     []RealtimeHotword{{Word: "豆包"}},
+			CorrectWords: map[string]string{"火山": "火山引擎"},
+		},
+	}
+	cfg.TTS = RealtimeTTSConfig{
+		Speaker: "speaker-1",
+		AudioConfig: RealtimeAudioConfig{
+			Channel:      1,
+			Format:       FormatPCMS16LE,
+			SampleRate:   SampleRate24000,
+			Bits:         16,
+			SpeechRate:   12,
+			LoudnessRate: -5,
+		},
+		Extra: &RealtimeTTSExtra{
+			ExplicitDialect: "sichuan",
+			AIGCMetadata: &RealtimeAIGCMetadata{
+				Enable:            new(false),
+				ContentProducer:   "producer",
+				ProduceID:         "produce-id",
+				ContentPropagator: "propagator",
+				PropagateID:       "propagate-id",
+			},
+			TTS20Model: "expressive",
+		},
+	}
+	cfg.Dialog = RealtimeDialogConfig{
+		DialogID:      "dialog-1",
+		BotName:       "bot",
+		SystemRole:    "system instruction",
+		SpeakingStyle: "concise",
+		Location: &RealtimeLocation{
+			Longitude:   116.4,
+			Latitude:    39.9,
+			City:        "北京",
+			Country:     "中国",
+			Province:    "北京",
+			District:    "海淀",
+			Town:        "中关村",
+			CountryCode: "CN",
+			Address:     "测试地址",
+		},
+		DialogContext: []RealtimeDialogContextItem{{Role: "user", Text: "你好", Timestamp: 1}},
+		Extra: &RealtimeDialogExtra{
+			StrictAudit:                  new(false),
+			AuditResponse:                "blocked",
+			EnableVolcWebsearch:          new(true),
+			VolcWebsearchType:            "web_agent",
+			VolcWebsearchAPIKey:          "search-key",
+			VolcWebsearchBotID:           "bot-id",
+			VolcWebsearchResultCount:     3,
+			VolcWebsearchNoResultMessage: "no result",
+			EnableMusic:                  new(false),
+			EnableLoudnessNorm:           new(true),
+			EnableConversationTruncate:   new(true),
+			EnableUserQueryExit:          new(false),
+		},
+	}
+	cfg.Prompt = RealtimePromptConfig{System: "compat prompt", Variables: map[string]string{"name": "豆包"}}
+	cfg.Props = RealtimeGenerationProps{
+		Temperature:      0.3,
+		TopP:             0.7,
+		MaxTokens:        64,
+		PresencePenalty:  0.1,
+		FrequencyPenalty: 0.2,
+	}
+	cfg.History = []RealtimeConversationMessage{{Role: "assistant", Content: "previous"}}
+
+	normalized, err := normalizeRealtimeConfig(&cfg)
+	if err != nil {
+		t.Fatalf("normalizeRealtimeConfig error = %v", err)
+	}
+	payload, err := buildRealtimeStartPayload(normalized)
+	if err != nil {
+		t.Fatalf("buildRealtimeStartPayload error = %v", err)
+	}
+
+	assertJSONContract(t, payload, `{
+		"asr": {
+			"language": "zh-CN",
+			"audio_info": {"format":"speech_opus","sample_rate":16000,"channel":1},
+			"extra": {
+				"end_smooth_window_ms":1500,
+				"enable_custom_vad":true,
+				"enable_asr_twopass":false,
+				"boosting_table_id":"boost-id",
+				"boosting_table_name":"boost-name",
+				"regex_correct_table_id":"regex-id",
+				"regex_correct_table_name":"regex-name",
+				"context":{"hotwords":[{"word":"豆包"}],"correct_words":{"火山":"火山引擎"}}
+			}
+		},
+		"tts": {
+			"speaker":"speaker-1",
+			"audio_config":{"channel":1,"format":"pcm_s16le","sample_rate":24000,"bits":16,"speech_rate":12,"loudness_rate":-5},
+			"extra": {
+				"explicit_dialect":"sichuan",
+				"aigc_metadata":{"enable":false,"content_producer":"producer","produce_id":"produce-id","content_propagator":"propagator","propagate_id":"propagate-id"},
+				"tts_2.0_model":"expressive"
+			}
+		},
+		"dialog": {
+			"dialog_id":"dialog-1",
+			"bot_name":"bot",
+			"system_role":"system instruction",
+			"speaking_style":"concise",
+			"location":{"longitude":116.4,"latitude":39.9,"city":"北京","country":"中国","province":"北京","district":"海淀","town":"中关村","country_code":"CN","address":"测试地址"},
+			"dialog_context":[{"role":"user","text":"你好","timestamp":1}],
+			"extra": {
+				"strict_audit":false,
+				"audit_response":"blocked",
+				"enable_volc_websearch":true,
+				"volc_websearch_type":"web_agent",
+				"volc_websearch_api_key":"search-key",
+				"volc_websearch_bot_id":"bot-id",
+				"volc_websearch_result_count":3,
+				"volc_websearch_no_result_message":"no result",
+				"enable_music":false,
+				"enable_loudness_norm":true,
+				"enable_conversation_truncate":true,
+				"enable_user_query_exit":false,
+				"input_mod":"push_to_talk",
+				"model":"1.2.1.1"
+			}
+		},
+		"prompt":{"system":"compat prompt","variables":{"name":"豆包"}},
+		"props":{"temperature":0.3,"top_p":0.7,"max_tokens":64,"presence_penalty":0.1,"frequency_penalty":0.2},
+		"history":[{"role":"assistant","content":"previous"}]
+	}`)
+}
+
 func TestRealtimeConfigsDoNotExposeRequestPassthroughMaps(t *testing.T) {
 	assertNoAnyMapFields(t, reflect.TypeFor[RealtimeConfig](), "RealtimeConfig", map[reflect.Type]bool{})
 	assertNoAnyMapFields(t, reflect.TypeFor[RealtimeDuplexConfig](), "RealtimeDuplexConfig", map[reflect.Type]bool{})
@@ -358,36 +546,37 @@ func TestRealtimeDocumentedSessionEvents(t *testing.T) {
 	}
 
 	writes := conn.writesSnapshot()
-	wantEvents := []int32{
-		realtimeUpdateConfigEvent,
-		realtimeRAGTextEvent,
-		realtimeConversationCreate,
-		realtimeConversationUpdate,
-		realtimeConversationRetrieve,
-		realtimeConversationRetrieve,
-		realtimeConversationTruncate,
-		realtimeConversationDelete,
+	wantFrames := []struct {
+		event   int32
+		payload string
+	}{
+		{realtimeUpdateConfigEvent, `{"tts":{"speaker":"zh_female_vv_jupiter_bigtts","audio_config":{"speech_rate":5,"loudness_rate":6}},"dialog":{"dialog_id":"dialog-1","location":{"city":"上海"}}}`},
+		{realtimeRAGTextEvent, `{"external_rag":"[{\"title\":\"t\",\"content\":\"c\"}]"}`},
+		{realtimeConversationCreate, `{"items":[{"role":"user","text":"q","timestamp":1},{"role":"assistant","text":"a","timestamp":2}]}`},
+		{realtimeConversationUpdate, `{"items":[{"item_id":"item-1","text":"updated"}]}`},
+		{realtimeConversationRetrieve, `{}`},
+		{realtimeConversationRetrieve, `{"items":[{"item_id":"item-1"}]}`},
+		{realtimeConversationTruncate, `{"item_id":"item-1","audio_end_ms":1200}`},
+		{realtimeConversationDelete, `{"items":[{"item_id":"item-1"}]}`},
 	}
-	if len(writes) < len(wantEvents)+2 {
-		t.Fatalf("writes count = %d, want >= %d", len(writes), len(wantEvents)+2)
+	if len(writes) < len(wantFrames)+2 {
+		t.Fatalf("writes count = %d, want >= %d", len(writes), len(wantFrames)+2)
 	}
-	for i, want := range wantEvents {
-		frame, err := protocol.ParseServerFrame(writes[len(writes)-len(wantEvents)+i])
+	for i, want := range wantFrames {
+		frame, err := protocol.ParseServerFrame(writes[len(writes)-len(wantFrames)+i])
 		if err != nil {
 			t.Fatalf("parse frame %d: %v", i, err)
 		}
-		if frame.Event != want {
-			t.Fatalf("frame %d event = %d, want %d", i, frame.Event, want)
+		if frame.Event != want.event {
+			t.Fatalf("frame %d event = %d, want %d", i, frame.Event, want.event)
 		}
-		if i == 4 {
-			var payload map[string]any
-			if err := json.Unmarshal(frame.Payload, &payload); err != nil {
-				t.Fatalf("unmarshal retrieve-latest payload: %v", err)
-			}
-			if _, ok := payload["items"]; ok {
-				t.Fatalf("retrieve-latest payload contains items: %s", frame.Payload)
-			}
+		if frame.SessionID != session.SessionID() {
+			t.Fatalf("frame %d binary session ID = %q, want %q", i, frame.SessionID, session.SessionID())
 		}
+		if frame.ConnectID != "" {
+			t.Fatalf("frame %d binary connect ID = %q, want empty", i, frame.ConnectID)
+		}
+		assertJSONContract(t, frame.Payload, want.payload)
 	}
 }
 
@@ -479,6 +668,121 @@ func TestRealtimeDecodeUpdatedPayloadFields(t *testing.T) {
 	if len(evt.Results) != 1 || evt.Results[0].Text != "recognized" || evt.Results[0].IsInterim {
 		t.Fatalf("results = %+v", evt.Results)
 	}
+}
+
+func TestRealtimeServerEventWireContract(t *testing.T) {
+	tests := []struct {
+		name    string
+		event   RealtimeEventType
+		payload string
+		check   func(*testing.T, *RealtimeEvent)
+	}{
+		{
+			name:    "usage",
+			event:   EventUsageResponse,
+			payload: `{"usage":{"input_text_tokens":1,"input_audio_tokens":2,"cached_text_tokens":3,"cached_audio_tokens":4,"output_text_tokens":5,"output_audio_tokens":6}}`,
+			check: func(t *testing.T, evt *RealtimeEvent) {
+				t.Helper()
+				want := &RealtimeUsage{1, 2, 3, 4, 5, 6}
+				if !reflect.DeepEqual(evt.Usage, want) {
+					t.Fatalf("usage = %+v, want %+v", evt.Usage, want)
+				}
+			},
+		},
+		{
+			name:    "tts started",
+			event:   EventTTSStarted,
+			payload: `{"text":"answer","tts_type":"default","question_id":"q-1","reply_id":"r-1"}`,
+			check: func(t *testing.T, evt *RealtimeEvent) {
+				t.Helper()
+				if evt.Text != "answer" || evt.TTSType != "default" || evt.QuestionID != "q-1" || evt.ReplyID != "r-1" {
+					t.Fatalf("TTS event = %+v", evt)
+				}
+			},
+		},
+		{
+			name:    "asr response",
+			event:   EventASRResponse,
+			payload: `{"results":[{"text":"partial","is_interim":true},{"text":"final","is_interim":false}]}`,
+			check: func(t *testing.T, evt *RealtimeEvent) {
+				t.Helper()
+				want := []RealtimeASRResult{{Text: "partial", IsInterim: true}, {Text: "final", IsInterim: false}}
+				if !reflect.DeepEqual(evt.Results, want) || evt.Text != "partial" || !evt.IsFinal {
+					t.Fatalf("ASR event = %+v, want results=%+v and final", evt, want)
+				}
+			},
+		},
+		{
+			name:    "chat response",
+			event:   EventChatResponse,
+			payload: `{"content":"reply","question_id":"q-2","reply_id":"r-2"}`,
+			check: func(t *testing.T, evt *RealtimeEvent) {
+				t.Helper()
+				if evt.Text != "reply" || evt.QuestionID != "q-2" || evt.ReplyID != "r-2" {
+					t.Fatalf("chat event = %+v", evt)
+				}
+			},
+		},
+		{
+			name:    "conversation items",
+			event:   EventConversationRetrieved,
+			payload: `{"items":[{"item_id":"item-1","role":"user","text":"question","timestamp":123}]}`,
+			check: func(t *testing.T, evt *RealtimeEvent) {
+				t.Helper()
+				want := []RealtimeConversationItem{{ItemID: "item-1", Role: "user", Text: "question", Timestamp: 123}}
+				if !reflect.DeepEqual(evt.Items, want) {
+					t.Fatalf("items = %+v, want %+v", evt.Items, want)
+				}
+			},
+		},
+		{
+			name:    "tts finished",
+			event:   EventTTSFinished,
+			payload: `{"status_code":20000000,"question_id":"q-3","reply_id":"r-3"}`,
+			check: func(t *testing.T, evt *RealtimeEvent) {
+				t.Helper()
+				if evt.StatusCode != "20000000" || evt.QuestionID != "q-3" || evt.ReplyID != "r-3" {
+					t.Fatalf("TTS finished event = %+v", evt)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			session, conn := newOpenedRealtimeSessionForTest(t, nil)
+			defer session.Close()
+			conn.enqueue(websocket.BinaryMessage, mustBuildRealtimeServerEventFrame(t, int32(tt.event), session.SessionID(), "", []byte(tt.payload)))
+
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			evt, err := session.RecvEvent(ctx)
+			if err != nil {
+				t.Fatalf("RecvEvent error = %v", err)
+			}
+			if evt.Type != tt.event || evt.SessionID != session.SessionID() {
+				t.Fatalf("event envelope = %+v, want type=%d session=%q", evt, tt.event, session.SessionID())
+			}
+			tt.check(t, evt)
+		})
+	}
+
+	t.Run("binary audio", func(t *testing.T) {
+		session, conn := newOpenedRealtimeSessionForTest(t, nil)
+		defer session.Close()
+		wantAudio := []byte{0x00, 0x01, 0xfe, 0xff}
+		conn.enqueue(websocket.BinaryMessage, mustBuildRealtimeServerAudioFrame(t, session.SessionID(), wantAudio))
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		evt, err := session.RecvEvent(ctx)
+		if err != nil {
+			t.Fatalf("RecvEvent error = %v", err)
+		}
+		if evt.Type != EventTTSAudioData || !reflect.DeepEqual(evt.Audio, wantAudio) {
+			t.Fatalf("audio event = %+v, want bytes %v", evt, wantAudio)
+		}
+	})
 }
 
 func TestRealtimeRecvFinalThenErrorOrder(t *testing.T) {
@@ -1123,6 +1427,24 @@ func mustBuildRealtimeServerEventFrame(t *testing.T, event int32, sessionID, con
 	return raw
 }
 
+func mustBuildRealtimeServerAudioFrame(t *testing.T, sessionID string, payload []byte) []byte {
+	t.Helper()
+
+	raw, err := protocol.BuildEventFrame(protocol.EventFrame{
+		MessageType:   protocol.MessageTypeAudioOnlyServer,
+		Flags:         protocol.FlagWithEvent,
+		Event:         int32(EventTTSAudioData),
+		SessionID:     sessionID,
+		Serialization: protocol.SerializationNone,
+		Compression:   protocol.CompressionNone,
+		Payload:       payload,
+	})
+	if err != nil {
+		t.Fatalf("BuildEventFrame audio error = %v", err)
+	}
+	return raw
+}
+
 func mustBuildRealtimeServerErrorFrame(t *testing.T, event int32, sessionID string, code uint32, payload []byte) []byte {
 	t.Helper()
 
@@ -1140,6 +1462,22 @@ func mustBuildRealtimeServerErrorFrame(t *testing.T, event int32, sessionID stri
 		t.Fatalf("BuildEventFrame error = %v", err)
 	}
 	return raw
+}
+
+func assertJSONContract(t *testing.T, got []byte, want string) {
+	t.Helper()
+
+	var gotValue any
+	if err := json.Unmarshal(got, &gotValue); err != nil {
+		t.Fatalf("unmarshal actual JSON: %v; payload=%s", err, got)
+	}
+	var wantValue any
+	if err := json.Unmarshal([]byte(want), &wantValue); err != nil {
+		t.Fatalf("unmarshal expected JSON: %v; payload=%s", err, want)
+	}
+	if !reflect.DeepEqual(gotValue, wantValue) {
+		t.Fatalf("JSON contract mismatch\n got: %s\nwant: %s", got, want)
+	}
 }
 
 func assertNoAnyMapFields(t *testing.T, typ reflect.Type, path string, seen map[reflect.Type]bool) {
