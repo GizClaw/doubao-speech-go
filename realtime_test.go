@@ -996,6 +996,9 @@ func TestRealtimeOperationErrorsAreDecodedAndNonfatal(t *testing.T) {
 	if deleted.Error == nil || deleted.Error.Code != 40000010 || deleted.Message == "" {
 		t.Fatalf("deleted event = %+v, want mapped provider error", deleted)
 	}
+	if deleted.Error.ReqID != "" {
+		t.Fatalf("deleted error reqid = %q, must not reuse session ID", deleted.Error.ReqID)
+	}
 	common, err := session.RecvEvent(ctx)
 	if err != nil {
 		t.Fatalf("common RecvEvent error = %v", err)

@@ -173,13 +173,13 @@ func (c *RealtimeConnection) StartSession(ctx context.Context, cfg *RealtimeConf
 	}
 	if frame.MessageType == protocol.MessageTypeError {
 		return nil, wrapError(
-			withErrorMetadata(parseWSErrorPayload(frame.Payload, frame.ErrorCode), responseMetadata{ReqID: sessionID, ConnectID: c.connectID}),
+			withErrorMetadata(parseWSErrorPayload(frame.Payload, frame.ErrorCode), responseMetadata{ConnectID: c.connectID}),
 			"start session failed",
 		)
 	}
 	if frame.HasEvent && frame.Event == int32(EventSessionFailed) {
 		return nil, wrapError(
-			withErrorMetadata(realtimePayloadError(frame.Payload, CodeServerError, "session failed"), responseMetadata{ReqID: sessionID, ConnectID: c.connectID}),
+			withErrorMetadata(realtimePayloadError(frame.Payload, CodeServerError, "session failed"), responseMetadata{ConnectID: c.connectID}),
 			"start session failed",
 		)
 	}
@@ -804,7 +804,7 @@ func (s *RealtimeSession) receiveLoop() {
 				return
 			}
 		case websocket.TextMessage:
-			s.pushErr(withErrorMetadata(parseWSErrorPayload(payload, 0), responseMetadata{ReqID: s.sessionID, ConnectID: s.conn.connectID}))
+			s.pushErr(withErrorMetadata(parseWSErrorPayload(payload, 0), responseMetadata{ConnectID: s.conn.connectID}))
 			return
 		default:
 			// Ignore unsupported message types.
@@ -831,7 +831,7 @@ func (s *RealtimeSession) decodeFrame(frame *protocol.ParsedFrame) (*RealtimeEve
 	}
 
 	if frame.MessageType == protocol.MessageTypeError {
-		parsedErr := withErrorMetadata(parseWSErrorPayload(frame.Payload, frame.ErrorCode), responseMetadata{ReqID: s.sessionID, ConnectID: s.conn.connectID})
+		parsedErr := withErrorMetadata(parseWSErrorPayload(frame.Payload, frame.ErrorCode), responseMetadata{ConnectID: s.conn.connectID})
 		if apiErr, ok := AsError(parsedErr); ok {
 			evt.Error = apiErr
 			evt.ReqID = apiErr.ReqID
@@ -853,7 +853,7 @@ func (s *RealtimeSession) decodeFrame(frame *protocol.ParsedFrame) (*RealtimeEve
 
 	decodeEventPayload(evt)
 	if evt.Error != nil {
-		withErrorMetadata(evt.Error, responseMetadata{ReqID: s.sessionID, ConnectID: s.conn.connectID})
+		withErrorMetadata(evt.Error, responseMetadata{ConnectID: s.conn.connectID})
 		evt.ReqID = evt.Error.ReqID
 		evt.TraceID = evt.Error.TraceID
 		evt.LogID = evt.Error.LogID
