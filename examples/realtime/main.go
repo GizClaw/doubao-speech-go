@@ -13,19 +13,23 @@ import (
 
 func main() {
 	var (
-		speaker   string
-		mode      string
-		model     string
-		round1    string
-		round2    string
-		pcmPath   string
-		ttsText   string
-		interrupt bool
+		speaker        string
+		mode           string
+		model          string
+		instructions   string
+		expectResponse string
+		round1         string
+		round2         string
+		pcmPath        string
+		ttsText        string
+		interrupt      bool
 	)
 
-	flag.StringVar(&speaker, "speaker", firstNonEmpty(os.Getenv("DOUBAO_REALTIME_SPEAKER"), "zh_female_cancan"), "TTS speaker/voice ID")
+	flag.StringVar(&speaker, "speaker", strings.TrimSpace(os.Getenv("DOUBAO_REALTIME_SPEAKER")), "required TTS speaker/voice ID compatible with the selected model")
 	flag.StringVar(&mode, "mode", firstNonEmpty(os.Getenv("DOUBAO_REALTIME_INPUT_MODE"), string(doubaospeech.RealtimeInputModeText)), "input mode: realtime, keep_alive, push_to_talk, text, audio_file")
-	flag.StringVar(&model, "model", firstNonEmpty(os.Getenv("DOUBAO_REALTIME_MODEL"), string(doubaospeech.RealtimeModelO20)), "realtime model version: 1.2.1.1 or 2.2.0.0; legacy aliases like O and SC are normalized")
+	flag.StringVar(&model, "model", strings.TrimSpace(os.Getenv("DOUBAO_REALTIME_MODEL")), "required realtime model version: 1.2.1.1 or 2.2.0.0; aliases like O20 and SC20 are normalized")
+	flag.StringVar(&instructions, "instructions", "You are a concise, accurate, and actionable voice assistant.", "initial system/persona instruction mapped to the selected model family")
+	flag.StringVar(&expectResponse, "expect-response", "", "optional substring that must occur in the model's text response")
 	flag.StringVar(&round1, "round1", "Please give a brief self-introduction.", "First-round user message")
 	flag.StringVar(&round2, "round2", "Based on the updated settings, summarize your capability boundaries in two sentences.", "Second-round user message")
 	flag.StringVar(&pcmPath, "pcm", "examples/asr_v2_sauc_ws/sample_zh_16k.pcm", "16 kHz mono int16 PCM file for audio-mode smoke")
@@ -39,6 +43,10 @@ func main() {
 		os.Exit(2)
 	}
 	modelVersion := doubaospeech.RealtimeModelVersion(strings.TrimSpace(model))
+	if strings.TrimSpace(model) == "" || strings.TrimSpace(speaker) == "" {
+		fmt.Fprintln(os.Stderr, "-model and -speaker are required (or set DOUBAO_REALTIME_MODEL and DOUBAO_REALTIME_SPEAKER)")
+		os.Exit(2)
+	}
 
 	appID := firstNonEmpty(os.Getenv("DOUBAO_APP_ID"), os.Getenv("DOUBAO_REALTIME_APP_ID"))
 	apiKey := firstNonEmpty(os.Getenv("DOUBAO_API_KEY"), os.Getenv("DOUBAO_REALTIME_API_KEY"))
@@ -64,6 +72,7 @@ func main() {
 	cfg.TTS.Speaker = strings.TrimSpace(speaker)
 	cfg.InputMode = inputMode
 	cfg.Model = modelVersion
+	cfg.Instructions = instructions
 	enableCustomVAD := true
 	enableASRTwopass := false
 	cfg.ASR.AudioInfo = &doubaospeech.RealtimeASRAudioInfo{
@@ -86,18 +95,6 @@ func main() {
 	cfg.TTS.AudioConfig.LoudnessRate = 0
 	cfg.EventBuffer = 1024
 	cfg.BackpressureTimeout = 30 * time.Second
-	cfg.Prompt = doubaospeech.RealtimePromptConfig{
-		System: "You are a concise, accurate, and actionable voice assistant.",
-		Variables: map[string]string{
-			"tone": "professional",
-		},
-	}
-	cfg.Props = doubaospeech.RealtimeGenerationProps{
-		Temperature: 0.3,
-		TopP:        0.9,
-		MaxTokens:   256,
-	}
-
 	session, err := client.Realtime.OpenSession(ctx, &cfg)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "failed to open realtime session: %v\n", err)
@@ -105,10 +102,10 @@ func main() {
 	}
 	defer session.Close()
 
-	fmt.Printf("opened session: %s\n", session.SessionID())
+	fmt.Printf("opened session: session_id=%s dialog_id=%s\n", session.SessionID(), session.DialogID())
 
 	if inputMode != doubaospeech.RealtimeInputModeText {
-		if err := runAudioScenario(ctx, session, inputMode, pcmPath, ttsText, interrupt); err != nil {
+		if err := runAudioScenario(ctx, session, inputMode, pcmPath, ttsText, interrupt, expectResponse); err != nil {
 			fmt.Fprintf(os.Stderr, "audio scenario failed: %v\n", err)
 			os.Exit(1)
 		}
@@ -116,7 +113,7 @@ func main() {
 		return
 	}
 
-	if err := runTextScenario(ctx, session, round1, round2); err != nil {
+	if err := runTextScenario(ctx, session, round1, round2, expectResponse); err != nil {
 		fmt.Fprintf(os.Stderr, "text scenario failed: %v\n", err)
 		os.Exit(1)
 	}
@@ -143,7 +140,7 @@ func realtimeDialogExtra(searchAPIKey string) *doubaospeech.RealtimeDialogExtra 
 	return extra
 }
 
-func runTextScenario(ctx context.Context, session *doubaospeech.RealtimeSession, round1, round2 string) error {
+func runTextScenario(ctx context.Context, session *doubaospeech.RealtimeSession, round1, round2, expected string) error {
 	if err := session.SendUserMessage(ctx, round1); err != nil {
 		return fmt.Errorf("round1 send failed: %w", err)
 	}
@@ -153,32 +150,9 @@ func runTextScenario(ctx context.Context, session *doubaospeech.RealtimeSession,
 		return fmt.Errorf("round1 receive failed: %w", err)
 	}
 
-	// Multi-turn update 1: rewrite history before round 2.
-	session.UpdateHistory([]doubaospeech.RealtimeConversationMessage{
-		{Role: "user", Content: round1},
-		{Role: "assistant", Content: round1Reply + " (history revised in example before round 2)"},
-	})
-	if err := session.ReplaceHistory(1, doubaospeech.RealtimeConversationMessage{
-		Role:    "assistant",
-		Content: round1Reply + " (ReplaceHistory: second revision before round 2)",
-	}); err != nil {
-		return fmt.Errorf("replace history failed: %w", err)
+	if err := assertExpectedResponse(round1Reply, expected); err != nil {
+		return fmt.Errorf("round1 response assertion failed: %w", err)
 	}
-
-	// Multi-turn update 2: update prompt.
-	session.UpdatePrompt(doubaospeech.RealtimePromptConfig{
-		System: "Now state limitations more explicitly and keep the answer within two sentences.",
-		Variables: map[string]string{
-			"tone": "concise",
-		},
-	})
-
-	// Multi-turn update 3: update generation props.
-	session.UpdateProps(doubaospeech.RealtimeGenerationProps{
-		Temperature: 0.1,
-		TopP:        0.8,
-		MaxTokens:   128,
-	})
 
 	if err := session.SendText(ctx, round2); err != nil {
 		return fmt.Errorf("round2 send failed: %w", err)
@@ -186,10 +160,6 @@ func runTextScenario(ctx context.Context, session *doubaospeech.RealtimeSession,
 
 	if _, err := recvUntilFinalWithIterator(ctx, session, "round2"); err != nil {
 		return fmt.Errorf("round2 receive failed: %w", err)
-	}
-
-	if err := session.Interrupt(ctx); err != nil {
-		fmt.Fprintf(os.Stderr, "interrupt returned error (may be expected on some servers): %v\n", err)
 	}
 	return nil
 }
@@ -207,7 +177,7 @@ func closeSession(session *doubaospeech.RealtimeSession) {
 	fmt.Println("session closed idempotently")
 }
 
-func runAudioScenario(ctx context.Context, session *doubaospeech.RealtimeSession, mode doubaospeech.RealtimeInputMode, pcmPath, ttsText string, interrupt bool) error {
+func runAudioScenario(ctx context.Context, session *doubaospeech.RealtimeSession, mode doubaospeech.RealtimeInputMode, pcmPath, ttsText string, interrupt bool, expected string) error {
 	if ttsText != "" {
 		if err := sendAudioTurn(ctx, session, mode, pcmPath); err != nil {
 			return err
@@ -230,6 +200,9 @@ func runAudioScenario(ctx context.Context, session *doubaospeech.RealtimeSession
 	}
 
 	if interrupt {
+		if mode != doubaospeech.RealtimeInputModePushToTalk {
+			return fmt.Errorf("-interrupt requires -mode push_to_talk")
+		}
 		if err := recvUntilEvent(ctx, session, "audio-interrupt", func(evt *doubaospeech.RealtimeEvent) bool {
 			return evt.Type == doubaospeech.EventChatResponse ||
 				evt.Type == doubaospeech.EventTTSStarted ||
@@ -250,7 +223,8 @@ func runAudioScenario(ctx context.Context, session *doubaospeech.RealtimeSession
 	}
 
 	var sawASR, sawASREnded, sawResponse bool
-	return recvUntilEvent(ctx, session, "audio", func(evt *doubaospeech.RealtimeEvent) bool {
+	responseText := strings.Builder{}
+	err := recvUntilEvent(ctx, session, "audio", func(evt *doubaospeech.RealtimeEvent) bool {
 		if evt.Type == doubaospeech.EventASRResponse && strings.TrimSpace(evt.Text) != "" {
 			sawASR = true
 		}
@@ -262,8 +236,28 @@ func runAudioScenario(ctx context.Context, session *doubaospeech.RealtimeSession
 			evt.Type == doubaospeech.EventTTSAudioData {
 			sawResponse = true
 		}
+		if evt.Type == doubaospeech.EventChatResponse && evt.Text != "" {
+			responseText.WriteString(evt.Text)
+		}
+		if expected != "" {
+			return sawASR && sawASREnded && evt.Type == doubaospeech.EventChatEnded
+		}
 		return sawASR && sawASREnded && sawResponse
 	})
+	if err != nil {
+		return err
+	}
+	return assertExpectedResponse(responseText.String(), expected)
+}
+
+func assertExpectedResponse(response, expected string) error {
+	if expected == "" {
+		return nil
+	}
+	if !strings.Contains(response, expected) {
+		return fmt.Errorf("response did not contain expected substring %q", expected)
+	}
+	return nil
 }
 
 func sendAudioTurn(ctx context.Context, session *doubaospeech.RealtimeSession, mode doubaospeech.RealtimeInputMode, pcmPath string) error {
