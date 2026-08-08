@@ -1,6 +1,10 @@
 # Realtime Speech
 
-Official documentation: <https://www.volcengine.com/docs/6561/1594356>
+Official sources:
+
+- Realtime wire/API contract: <https://www.volcengine.com/docs/6561/1594356>
+- Dated capability updates: <https://www.volcengine.com/docs/6561/162929>
+- Evolving voice inventory: <https://www.volcengine.com/docs/6561/1257544>
 
 This page maps the VolcEngine end-to-end realtime speech API to the current SDK
 surface. This is the numeric-event, binary-frame realtime API exposed as
@@ -34,6 +38,10 @@ X-Api-App-Id: <app-id>
 X-Api-Key: <api-key>
 X-Api-Resource-Id: volc.speech.dialog
 ```
+
+`WithResourceID` is the only resource-ID owner for this API. The deprecated
+`RealtimeConfig.ResourceID` cannot affect an already-open handshake and a
+non-empty value is rejected instead of being silently ignored.
 
 The handshake response can include `X-Tt-Logid`; log it for support/debugging.
 
@@ -78,7 +86,20 @@ Current typed SDK model constants:
 | O 2.0 | `RealtimeModelO20` | `1.2.1.1` |
 | SC 2.0 | `RealtimeModelSC20` | `2.2.0.0` |
 
-The SDK normalizes common older aliases before sending `StartSession`.
+The SDK normalizes common older aliases before sending `StartSession`. A model
+must be selected explicitly; there is no empty-model or inferred-family path.
+
+`RealtimeConfig.Instructions` is the canonical SDK-owned initial persona/system
+instruction. It is semantic and never appears as a literal JSON key:
+
+| Selected model | Canonical wire target | Rejected opposite-family fields |
+| --- | --- | --- |
+| O20 / `1.2.1.1` | `dialog.system_role` | `dialog.character_manifest` |
+| SC20 / `2.2.0.0` | `dialog.character_manifest` | `dialog.bot_name`, `dialog.system_role`, `dialog.speaking_style` |
+
+An identical exact target is accepted idempotently. Conflicting values are
+rejected before a frame is written. `speaking_style` remains an independent O20
+control and is never populated from `Instructions`.
 
 Upstream model notes:
 
@@ -121,20 +142,9 @@ converts it to PCM internally:
 }
 ```
 
-Server output defaults to OGG-wrapped Opus. To request PCM output, set TTS
-audio configuration in `StartSession`:
-
-```json
-{
-  "tts": {
-    "audio_config": {
-      "channel": 1,
-      "format": "pcm",
-      "sample_rate": 24000
-    }
-  }
-}
-```
+Realtime TTS PCM output is 24 kHz mono. `pcm` means 32-bit float little-endian;
+`pcm_s16le` means signed 16-bit little-endian. The SDK default is 24 kHz mono
+`pcm_s16le`:
 
 ```json
 {
@@ -321,28 +331,24 @@ Current SDK typed request coverage:
 | JSON path | SDK field | Notes |
 | --- | --- | --- |
 | `asr.language` | `RealtimeASRConfig.Language` | SDK extension; not shown in the pasted upstream field table. |
-| `tts.speaker` | `RealtimeTTSConfig.Speaker` | Required by SDK defaults. |
+| `tts.speaker` | `RealtimeTTSConfig.Speaker` | Required; compatibility with the selected model/account is documentation-only. |
 | `tts.audio_config.channel` | `RealtimeAudioConfig.Channel` | Defaults to `1`. |
-| `tts.audio_config.format` | `RealtimeAudioConfig.Format` | Defaults to `pcm`. |
-| `tts.audio_config.sample_rate` | `RealtimeAudioConfig.SampleRate` | Defaults to `16000`; set `24000` for PCM output if needed. |
+| `tts.audio_config.format` | `RealtimeAudioConfig.Format` | Defaults to `pcm_s16le`. |
+| `tts.audio_config.sample_rate` | `RealtimeAudioConfig.SampleRate` | Defaults to `24000` for TTS output. |
 | `tts.audio_config.bits` | `RealtimeAudioConfig.Bits` | Defaults to `16`. |
 | `tts.audio_config.speech_rate` | `RealtimeAudioConfig.SpeechRate` | Range `[-50,100]`. |
 | `tts.audio_config.loudness_rate` | `RealtimeAudioConfig.LoudnessRate` | Range `[-50,100]`. |
 | `dialog.dialog_id` | `RealtimeDialogConfig.DialogID` | Loads recent conversation records for context continuity. |
 | `dialog.bot_name` | `RealtimeDialogConfig.BotName` | O/O 2.0 only. Max 20 characters upstream. |
-| `dialog.system_role` | `RealtimeDialogConfig.SystemRole` | O/O 2.0 only. |
+| `dialog.system_role` | `RealtimeConfig.Instructions` / `RealtimeDialogConfig.SystemRole` | Canonical/escape-hatch O20 target. |
 | `dialog.speaking_style` | `RealtimeDialogConfig.SpeakingStyle` | O/O 2.0 only. |
-| `dialog.character_manifest` | `RealtimeDialogConfig.CharacterManifest` | SC/SC 2.0 only. |
+| `dialog.character_manifest` | `RealtimeConfig.Instructions` / `RealtimeDialogConfig.CharacterManifest` | Canonical/escape-hatch SC20 target. |
 | `dialog.extra.input_mod` | `RealtimeConfig.InputMode` | Mapped from `RealtimeInputMode`. |
-| `dialog.extra.model` | `RealtimeConfig.Model` | Required upstream; SDK defaults/normalizes it. |
-| `prompt.system` | `RealtimePromptConfig.System` | Sent when non-empty. |
-| `prompt.variables` | `RealtimePromptConfig.Variables` | Sent when non-empty. |
-| `props.temperature` | `RealtimeGenerationProps.Temperature` | Sent when non-zero. |
-| `props.top_p` | `RealtimeGenerationProps.TopP` | Sent when non-zero. |
-| `props.max_tokens` | `RealtimeGenerationProps.MaxTokens` | Sent when non-zero. |
-| `props.presence_penalty` | `RealtimeGenerationProps.PresencePenalty` | Sent when non-zero. |
-| `props.frequency_penalty` | `RealtimeGenerationProps.FrequencyPenalty` | Sent when non-zero. |
-| `history` | `RealtimeConfig.History` | Local SDK conversation snapshot. |
+| `dialog.extra.model` | `RealtimeConfig.Model` | Mandatory; normalized and retained on the session. |
+| `prompt.system` | `RealtimePromptConfig.System` | Compatibility extension serialized by the SDK; not the documented System Prompt contract. |
+| `prompt.variables` | `RealtimePromptConfig.Variables` | Compatibility extension serialized when non-empty. |
+| `props.*` | `RealtimeGenerationProps` | Compatibility extension serialized when non-zero. |
+| `history` | `RealtimeConfig.History` | Compatibility extension/local snapshot, not canonical instructions. |
 
 Typed ASR fields:
 
@@ -402,6 +408,18 @@ Typed TTS extra fields:
 | `tts.extra.aigc_metadata.propagate_id` | string | Content propagation ID. |
 | `tts.extra.tts_2.0_model` | string | Clone voice effect; high-expression clone voices use `expressive`. |
 
+Validation follows the documented stable capability boundaries:
+
+- `enable_music=true` and non-empty `tts_2.0_model` are O20-only;
+- web search type is `web`, `web_summary`, or `web_agent` here;
+  `web_global_api` belongs to Realtime Duplex;
+- enabled web search requires `volc_websearch_api_key`; `web_agent` also
+  requires `volc_websearch_bot_id`;
+- `explicit_dialect` accepts `dongbei`, `sichuan`, or `shaanxi` and only takes
+  effect on compatible 2.0 `vv` voices;
+- speaker IDs stay opaque because public and customer-specific inventories
+  evolve independently of the SDK.
+
 ## UpdateConfig Request Surface
 
 `UpdateConfig` is event `201`.
@@ -429,6 +447,12 @@ Upstream fields include:
 - `dialog.location.country_code`
 - `dialog.location.address`
 
+The SDK projects exactly these fields. StartSession-only members such as TTS
+format/channel/sample-rate/bits/extra and dialog context/extra/
+`character_manifest` are rejected before write. O20 supports the listed live
+prompt fields; SC20 rejects them because event `201` has no documented SC
+instruction-replacement target.
+
 ## Client Events
 
 | Event ID | Name | Event class | SDK support | Notes |
@@ -450,6 +474,31 @@ Upstream fields include:
 | `513` | `ConversationTruncate` | context | yes | 2.0 only; requires `enable_conversation_truncate`, `item_id`, and `audio_end_ms`. |
 | `514` | `ConversationDelete` | context | yes | Deletes whole dialogue turns. |
 | `515` | `ClientInterrupt` | session | yes | Interrupts server response in push-to-talk mode. |
+
+Session IDs are carried only by the binary frame envelope. Event JSON is built
+per operation:
+
+| Event | Exact JSON fields |
+| --- | --- |
+| `102` | none (`{}`) |
+| `201` | only the UpdateConfig fields listed above |
+| `300` | `content` |
+| `400` | none (`{}`), push-to-talk only |
+| `500` | `start`, `content`, `end` |
+| `501` | `content`, plus retained compatibility `history`/`prompt`/`props` when set |
+| `502` | `external_rag` (opaque string, maximum 4,000 Unicode characters) |
+| `510` | `items[].role`, `items[].text`, optional `items[].timestamp` |
+| `511` | `items[].item_id`, `items[].text` |
+| `512` | no `items` for latest, otherwise `items[].item_id` |
+| `513` | `item_id`, `audio_end_ms`; requires StartSession truncation opt-in |
+| `514` | `items[].item_id` |
+| `515` | none (`{}`), push-to-talk only |
+
+Event `510` accepts at most 40 items in complete alternating user/assistant
+pairs. Timestamps must be all present or all omitted; supplied values must be
+strictly increasing and not in the future. Event `511` requires non-empty item
+ID and text. Per-event projection prevents fields from the shared public item
+type leaking into another operation.
 
 `ChatTTSText` frame sequence:
 
@@ -480,7 +529,9 @@ Upstream fields include:
 If a new user query interrupts playback before the final end packet is sent,
 the upstream document says the final packet does not need to be sent.
 
-`ChatRAGText.external_rag` is a JSON array string with entries like:
+`ChatRAGText.external_rag` is expected to be a JSON-array string with entries
+like the following. The SDK enforces only the character bound and does not
+parse or reformat the caller-owned string:
 
 ```json
 {
@@ -512,7 +563,7 @@ Conversation update/retrieve/delete events use `item_id` where needed.
 | `50` | `ConnectionStarted` | metadata/raw payload | Connection created. |
 | `51` | `ConnectionFailed` | error payload | Connection failed. |
 | `52` | `ConnectionFinished` | metadata/raw payload | Connection ended. |
-| `150` | `SessionStarted` | `SessionID`, `DialogID` | Returns `dialog_id` for context continuity. |
+| `150` | `SessionStarted` | session `DialogID()` | Binary `SessionID()` and payload `dialog_id` remain distinct. |
 | `152` | `SessionFinished` | final event | Session ended. |
 | `153` | `SessionFailed` | error payload | Session failed. |
 | `154` | `UsageResponse` | `RealtimeUsage` | Per-turn usage data. |
@@ -527,15 +578,23 @@ Conversation update/retrieve/delete events use `item_id` where needed.
 | `550` | `ChatResponse` | text, IDs | Model response text. |
 | `553` | `ChatTextQueryConfirmed` | question ID | Ack for `ChatTextQuery`. |
 | `559` | `ChatEnded` | question/reply IDs | Model response text ended. |
-| `567` | `ConversationCreated` | raw payload | Returns created context items. |
+| `567` | `ConversationCreated` | `RealtimeEvent.Items` | Returns created context items. |
 | `568` | `ConversationUpdated` | raw payload | Returns `{}` on success or a missing-item message on failure. |
-| `569` | `ConversationRetrieved` | raw payload | Returns context items. |
+| `569` | `ConversationRetrieved` | `RealtimeEvent.Items` | Returns context items. |
 | `570` | `ConversationTruncated` | raw payload | Ack for truncation. |
-| `571` | `ConversationDeleted` | raw payload | Returns deleted context items or an empty-delete message. |
+| `571` | `ConversationDeleted` | items or nonfatal `Error` | Returns deleted items; non-success status/message remains observable. |
 | `599` | `DialogCommonError` | error/status payload | Realtime dialogue error. |
 
 The upstream document notes that server JSON payloads may contain extra fields
 that clients do not need to handle.
+
+Events `51` and `153` map provider `error` text to `CodeServerError` and are
+terminal. Protocol error frames are also terminal. Events `571` and `599` map
+`status_code`/`message` to `RealtimeEvent.Error` but remain normal observable
+events, so the receive loop stays live. Numeric statuses populate `Error.Code`;
+non-numeric statuses remain in `RealtimeEvent.StatusCode` and use
+`CodeServerError`. No current O20/SC20-specific server-event schema difference
+is documented.
 
 ## Error Codes
 
@@ -568,5 +627,6 @@ The upstream document recommends reconnecting on server 5xx errors.
 ```bash
 DOUBAO_APP_ID=<your_app_id> \
 DOUBAO_API_KEY=<your_api_key> \
-go run ./examples/realtime -mode text -model 1.2.1.1
+go run ./examples/realtime -mode text -model 1.2.1.1 -speaker <o20-speaker> \
+  -instructions '只回答：收到。' -expect-response '收到'
 ```

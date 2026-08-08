@@ -1,109 +1,79 @@
-# Realtime multi-turn example
+# Realtime example
 
-This example demonstrates one **single realtime session** with multiple turns:
+This example opens one numeric-event Realtime session and exercises text or
+16 kHz mono PCM input. The initial system/persona instruction is supplied with
+`-instructions`; the SDK maps it to `dialog.system_role` for O20 and
+`dialog.character_manifest` for SC20.
 
-1. Open session with initial prompt + generation props
-2. Send round-1 user message and receive streaming events until final
-3. Update history before round-2
-4. Update prompt before round-2
-5. Update generation props before round-2
-6. Send round-2 user message and receive events until final
-7. Configure typed ASR/TTS/dialog extras, including optional web search
-8. Trigger one `ClientInterrupt` request
-9. Close session twice to verify idempotent close
+`-model` and `-speaker` are required. Speaker compatibility changes outside
+the SDK, so choose a voice that is enabled for the selected model and account.
+The example does not infer one voice that works across both model families.
 
-### API coverage in this example
-
-Covered directly in `main.go`:
-
-- `OpenSession`
-- `SendUserMessage`
-- `SendText` (alias)
-- `RecvEvent`
-- `Recv` (iterator form)
-- `UpdateHistory`
-- `ReplaceHistory`
-- `UpdatePrompt`
-- `UpdateProps`
-- `RealtimeASRExtra`
-- `RealtimeDialogExtra`
-- `Interrupt` (`ClientInterrupt`, event `515`)
-- `Close` (idempotent)
-
-Not covered in this single example (recommended scenarios):
-
-- `Dial` + `StartSession`: when you need explicit connection lifecycle control
-- `Connect`: when you prefer one-shot connect+session API (equivalent semantics to `OpenSession`)
-- `SendAudio` + `EndASR`: microphone/PCM and push-to-talk scenarios
-- `SayHello`: greeting bootstrap flow before user turn
-- `SendTTSText`: server-side TTS text streaming scenarios
-
-## Requirements
+## Credentials
 
 - `DOUBAO_APP_ID` or `DOUBAO_REALTIME_APP_ID`
 - `DOUBAO_API_KEY` or `DOUBAO_REALTIME_API_KEY`
-- `DOUBAO_VOLC_WEBSEARCH_API_KEY` (optional, enables typed `dialog.extra.enable_volc_websearch`)
+- `DOUBAO_VOLC_WEBSEARCH_API_KEY` (optional)
+- `DOUBAO_REALTIME_MODEL` (or pass `-model`)
+- `DOUBAO_REALTIME_SPEAKER` (or pass `-speaker`)
 
-## Run
-
-```bash
-DOUBAO_APP_ID=<your_app_id> \
-DOUBAO_API_KEY=<your_api_key> \
-DOUBAO_VOLC_WEBSEARCH_API_KEY=<your_search_api_key> \
-go run ./examples/realtime -mode text -model 1.2.1.1
-```
+The resource ID is a WebSocket handshake header. Configure it with
+`DOUBAO_REALTIME_RESOURCE_ID` / `WithResourceID`; it is not session JSON.
 
 ## Key flags
 
-- `-speaker`: TTS speaker/voice ID (default: `zh_female_cancan`)
-- `-mode`: input mode: `realtime`, `keep_alive`, `push_to_talk`, `text`, or `audio_file` (default: `text`)
-- `-model`: realtime model version, for example `1.2.1.1` or `2.2.0.0`; legacy aliases such as `O` and `SC` are normalized
-- `-round1`: first user message
-- `-round2`: second user message
+- `-model`: `1.2.1.1` (O20) or `2.2.0.0` (SC20); documented aliases are normalized
+- `-speaker`: model/account-compatible opaque voice ID
+- `-instructions`: canonical initial system/persona instruction
+- `-expect-response`: optional substring assertion for credential-backed smoke
+- `-mode`: `realtime`, `keep_alive`, `push_to_talk`, `text`, or `audio_file`
+- `-pcm`: 16 kHz mono signed-int16 little-endian input file
 
-## API-Key-Backed E2E Smoke
+TTS output is configured independently: the SDK default is 24 kHz mono
+`pcm_s16le`. Do not treat the 16 kHz ASR input file as the TTS output contract.
 
-Use this example with a local App ID config value and API key for live Realtime
-smoke checks:
+## Local smoke
+
+Load credentials without printing them, then provide separate model-compatible
+speakers:
 
 ```bash
 set -a
 source .env
 set +a
 
-go run ./examples/realtime -mode text -round1 "Reply with exactly: pong" -round2 "Reply with exactly: done"
-go run ./examples/realtime -mode realtime -pcm examples/asr_v2_sauc_ws/sample_zh_16k.pcm
-go run ./examples/realtime -mode push_to_talk -pcm examples/asr_v2_sauc_ws/sample_zh_16k.pcm
-go run ./examples/realtime -mode push_to_talk -pcm examples/asr_v2_sauc_ws/sample_zh_16k.pcm -interrupt
-go run ./examples/realtime -mode push_to_talk -pcm examples/asr_v2_sauc_ws/sample_zh_16k.pcm -tts-text "This is an SDK text synthesis smoke test."
+go run ./examples/realtime \
+  -mode push_to_talk \
+  -model 1.2.1.1 \
+  -speaker "$DOUBAO_REALTIME_O20_SPEAKER" \
+  -instructions '只回答：收到。' \
+  -expect-response '收到' \
+  -pcm examples/asr_v2_sauc_ws/sample_zh_16k.pcm
+
+go run ./examples/realtime \
+  -mode push_to_talk \
+  -model 2.2.0.0 \
+  -speaker "$DOUBAO_REALTIME_SC20_SPEAKER" \
+  -instructions '只回答：收到。' \
+  -expect-response '收到' \
+  -pcm examples/asr_v2_sauc_ws/sample_zh_16k.pcm
 ```
 
-## Voice list (realtime-compatible references)
+Other useful paths:
 
-> Table update date: **2026-03-02**
+```bash
+go run ./examples/realtime -mode text -model 1.2.1.1 -speaker "$DOUBAO_REALTIME_O20_SPEAKER"
+go run ./examples/realtime -mode push_to_talk -model 1.2.1.1 -speaker "$DOUBAO_REALTIME_O20_SPEAKER" -interrupt
+go run ./examples/realtime -mode push_to_talk -model 1.2.1.1 -speaker "$DOUBAO_REALTIME_O20_SPEAKER" -tts-text "SDK TTS smoke"
+```
 
-| voice_id | Language | Gender / style | Remark |
-|---|---|---|---|
-| `zh_female_cancan` | Chinese (Mandarin) | Female / standard | Default in this example, commonly used in VolcEngine realtime samples |
-| `BV700_streaming` | Chinese (Mandarin) | Female / standard (Cancan) | BytePlus Speech "Supported voice and languages" |
-| `BV701_streaming` | Chinese (Mandarin) | Male / expressive (Qingcang) | Supports multi-emotion in official docs |
-| `BV138_streaming` | English (US) | Female / expressive (Lawrence) | Dialog expressive voice in official docs |
-| `BV027_streaming` | English (US) | Female / formal (Amelia) | General English voice |
-| `BV520_streaming` | Japanese | Female / outgoing (Himari) | Japanese voice option |
+`RealtimeConfig.Prompt`, `Props`, `History`, and their local update helpers are
+retained compatibility extensions. The current official event `100`/`501`
+examples do not establish them as the audio-dialogue System Prompt contract;
+use `Instructions` for that purpose.
 
 ## Official sources
 
-- Realtime API entry (VolcEngine):
-  - https://www.volcengine.com/docs/6561/1594356
-- Realtime/TTS voice list references:
-  - https://docs.byteplus.com/en/docs/speech/docs-voice-parameters-1
-  - https://www.volcengine.com/docs/6561/1257544
-
-## Default speaker note
-
-`main.go` uses `zh_female_cancan` by default (`-speaker` flag).
-If your account is configured with BytePlus/BV voice IDs, pass a BV ID explicitly, for example:
-
-```bash
-go run ./examples/realtime -speaker BV700_streaming
-```
+- [Realtime API](https://www.volcengine.com/docs/6561/1594356)
+- [Product updates](https://www.volcengine.com/docs/6561/162929)
+- [Voice list](https://www.volcengine.com/docs/6561/1257544)

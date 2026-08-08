@@ -216,15 +216,13 @@ func runOldRealtimeTurn(ctx context.Context, client *doubaospeech.Client, cfg ex
 	rtCfg := doubaospeech.DefaultRealtimeConfig()
 	rtCfg.TTS.Speaker = cfg.OldSpeaker
 	rtCfg.TTS.AudioConfig.Format = doubaospeech.FormatPCMS16LE
-	rtCfg.TTS.AudioConfig.SampleRate = doubaospeech.SampleRate16000
+	rtCfg.TTS.AudioConfig.SampleRate = doubaospeech.SampleRate24000
 	rtCfg.TTS.AudioConfig.Bits = 16
 	rtCfg.InputMode = doubaospeech.RealtimeInputModeText
 	rtCfg.Model = cfg.OldModel
+	rtCfg.Instructions = "You are the first assistant in an integration smoke test. Speak exactly the requested sentence."
 	rtCfg.EventBuffer = 1024
 	rtCfg.BackpressureTimeout = 30 * time.Second
-	rtCfg.Prompt = doubaospeech.RealtimePromptConfig{
-		System: "You are the first assistant in an integration smoke test. Your only job is to speak exactly the requested sentence. Do not answer the requested sentence.",
-	}
 	rtCfg.Props = doubaospeech.RealtimeGenerationProps{Temperature: 0.1, TopP: 0.8, MaxTokens: 128}
 
 	session, err := client.Realtime.OpenSession(ctx, &rtCfg)

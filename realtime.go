@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"iter"
 	"maps"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/GizClaw/doubao-speech-go/internal/auth"
 	"github.com/GizClaw/doubao-speech-go/internal/protocol"
@@ -92,6 +94,13 @@ func (s *RealtimeService) Dial(ctx context.Context) (*RealtimeConnection, error)
 			"connection failed",
 		)
 	}
+	if frame.HasEvent && frame.Event == int32(EventConnectionFailed) {
+		_ = rtConn.Close()
+		return nil, wrapError(
+			withErrorMetadata(realtimePayloadError(frame.Payload, CodeServerError, "connection failed"), responseMetadata{ReqID: connectReqID, ConnectID: connectReqID}),
+			"connection failed",
+		)
+	}
 	if !frame.HasEvent || frame.Event != int32(EventConnectionStarted) {
 		_ = rtConn.Close()
 		return nil, fmt.Errorf("unexpected connection response event: %d", frame.Event)
@@ -168,6 +177,12 @@ func (c *RealtimeConnection) StartSession(ctx context.Context, cfg *RealtimeConf
 			"start session failed",
 		)
 	}
+	if frame.HasEvent && frame.Event == int32(EventSessionFailed) {
+		return nil, wrapError(
+			withErrorMetadata(realtimePayloadError(frame.Payload, CodeServerError, "session failed"), responseMetadata{ReqID: sessionID, ConnectID: c.connectID}),
+			"start session failed",
+		)
+	}
 	if !frame.HasEvent || frame.Event != int32(EventSessionStarted) {
 		return nil, fmt.Errorf("unexpected session response event: %d", frame.Event)
 	}
@@ -175,9 +190,15 @@ func (c *RealtimeConnection) StartSession(ctx context.Context, cfg *RealtimeConf
 		sessionID = frame.SessionID
 	}
 
+	started := &RealtimeEvent{Type: EventSessionStarted, Payload: copyBytes(frame.Payload)}
+	decodeEventPayload(started)
+
 	session := &RealtimeSession{
 		conn:      c,
 		sessionID: sessionID,
+		dialogID:  started.DialogID,
+		model:     normalized.Model,
+		inputMode: normalized.InputMode,
 		eventCh:   make(chan *RealtimeEvent, normalized.EventBuffer),
 		errCh:     make(chan error, 1),
 		closed:    make(chan struct{}),
@@ -188,6 +209,8 @@ func (c *RealtimeConnection) StartSession(ctx context.Context, cfg *RealtimeConf
 		history: cloneConversationHistory(normalized.History),
 		prompt:  clonePromptConfig(normalized.Prompt),
 		props:   cloneGenerationProps(normalized.Props),
+
+		conversationTruncateEnabled: normalized.Dialog.Extra != nil && boolValue(normalized.Dialog.Extra.EnableConversationTruncate),
 	}
 
 	go session.receiveLoop()
@@ -272,6 +295,11 @@ func (c *RealtimeConnection) readFrameWithContext(ctx context.Context) (*protoco
 type RealtimeSession struct {
 	conn      *RealtimeConnection
 	sessionID string
+	dialogID  string
+	model     RealtimeModelVersion
+	inputMode RealtimeInputMode
+
+	conversationTruncateEnabled bool
 
 	eventCh  chan *RealtimeEvent
 	errCh    chan error
@@ -300,6 +328,11 @@ type RealtimeSession struct {
 // SessionID returns current session ID.
 func (s *RealtimeSession) SessionID() string {
 	return s.sessionID
+}
+
+// DialogID returns the dialogue identifier negotiated by SessionStarted.
+func (s *RealtimeSession) DialogID() string {
+	return s.dialogID
 }
 
 // SendAudio sends one audio chunk (event=200).
@@ -375,6 +408,9 @@ func (s *RealtimeSession) SayHello(ctx context.Context, content string) error {
 
 // EndASR signals the end of client-side audio input in push-to-talk mode (event=400).
 func (s *RealtimeSession) EndASR(ctx context.Context) error {
+	if s.inputMode != RealtimeInputModePushToTalk {
+		return newAPIError(CodeParamError, "EndASR requires push_to_talk input mode")
+	}
 	if err := s.guardSend(ctx); err != nil {
 		return err
 	}
@@ -383,6 +419,9 @@ func (s *RealtimeSession) EndASR(ctx context.Context) error {
 
 // Interrupt interrupts current generation (event=515).
 func (s *RealtimeSession) Interrupt(ctx context.Context) error {
+	if s.inputMode != RealtimeInputModePushToTalk {
+		return newAPIError(CodeParamError, "ClientInterrupt requires push_to_talk input mode")
+	}
 	if err := s.guardSend(ctx); err != nil {
 		return err
 	}
@@ -394,7 +433,7 @@ func (s *RealtimeSession) UpdateConfig(ctx context.Context, cfg RealtimeUpdateCo
 	if err := s.guardSend(ctx); err != nil {
 		return err
 	}
-	payload, err := buildRealtimeUpdateConfigPayload(cfg)
+	payload, err := buildRealtimeUpdateConfigPayload(cfg, s.model)
 	if err != nil {
 		return err
 	}
@@ -406,6 +445,9 @@ func (s *RealtimeSession) SendRAGText(ctx context.Context, externalRAG string) e
 	if strings.TrimSpace(externalRAG) == "" {
 		return newAPIError(CodeParamError, "external_rag is empty")
 	}
+	if utf8.RuneCountInString(externalRAG) > 4000 {
+		return newAPIError(CodeParamError, "external_rag must be at most 4000 characters")
+	}
 	if err := s.guardSend(ctx); err != nil {
 		return err
 	}
@@ -415,24 +457,26 @@ func (s *RealtimeSession) SendRAGText(ctx context.Context, externalRAG string) e
 
 // CreateConversationItems appends server-side conversation context items (event=510).
 func (s *RealtimeSession) CreateConversationItems(ctx context.Context, items ...RealtimeConversationItem) error {
-	if len(items) == 0 {
-		return newAPIError(CodeParamError, "conversation items are empty")
+	payloadItems, err := buildRealtimeConversationCreateItems(items)
+	if err != nil {
+		return err
 	}
 	if err := s.guardSend(ctx); err != nil {
 		return err
 	}
-	return s.sendJSONEvent(ctx, realtimeConversationCreate, map[string]any{"items": items})
+	return s.sendJSONEvent(ctx, realtimeConversationCreate, map[string]any{"items": payloadItems})
 }
 
 // UpdateConversationItems updates server-side conversation context items (event=511).
 func (s *RealtimeSession) UpdateConversationItems(ctx context.Context, items ...RealtimeConversationItem) error {
-	if len(items) == 0 {
-		return newAPIError(CodeParamError, "conversation items are empty")
+	payloadItems, err := buildRealtimeConversationUpdateItems(items)
+	if err != nil {
+		return err
 	}
 	if err := s.guardSend(ctx); err != nil {
 		return err
 	}
-	return s.sendJSONEvent(ctx, realtimeConversationUpdate, map[string]any{"items": items})
+	return s.sendJSONEvent(ctx, realtimeConversationUpdate, map[string]any{"items": payloadItems})
 }
 
 // RetrieveConversationItems retrieves server-side conversation context (event=512).
@@ -441,11 +485,11 @@ func (s *RealtimeSession) RetrieveConversationItems(ctx context.Context, itemIDs
 	if err := s.guardSend(ctx); err != nil {
 		return err
 	}
-	items := make([]RealtimeConversationItem, 0, len(itemIDs))
+	items := make([]map[string]string, 0, len(itemIDs))
 	for _, itemID := range itemIDs {
 		itemID = strings.TrimSpace(itemID)
 		if itemID != "" {
-			items = append(items, RealtimeConversationItem{ItemID: itemID})
+			items = append(items, map[string]string{"item_id": itemID})
 		}
 	}
 	if len(items) == 0 {
@@ -462,6 +506,9 @@ func (s *RealtimeSession) TruncateConversationItem(ctx context.Context, itemID s
 	}
 	if audioEndMS < 0 {
 		return newAPIError(CodeParamError, "audio_end_ms must be >= 0")
+	}
+	if !s.conversationTruncateEnabled {
+		return newAPIError(CodeParamError, "ConversationTruncate requires enable_conversation_truncate")
 	}
 	if err := s.guardSend(ctx); err != nil {
 		return err
@@ -480,11 +527,11 @@ func (s *RealtimeSession) DeleteConversationItems(ctx context.Context, itemIDs .
 	if err := s.guardSend(ctx); err != nil {
 		return err
 	}
-	items := make([]RealtimeConversationItem, 0, len(itemIDs))
+	items := make([]map[string]string, 0, len(itemIDs))
 	for _, itemID := range itemIDs {
 		itemID = strings.TrimSpace(itemID)
 		if itemID != "" {
-			items = append(items, RealtimeConversationItem{ItemID: itemID})
+			items = append(items, map[string]string{"item_id": itemID})
 		}
 	}
 	if len(items) == 0 {
@@ -498,7 +545,7 @@ func (s *RealtimeSession) FinishSession(ctx context.Context) error {
 	if err := s.guardSend(ctx); err != nil {
 		return err
 	}
-	return s.sendJSONEvent(ctx, realtimeFinishSessionEvent, map[string]any{"session_id": s.sessionID})
+	return s.sendJSONEvent(ctx, realtimeFinishSessionEvent, map[string]any{})
 }
 
 // SendTTSText sends one complete caller-provided TTS text transaction (event=500).
@@ -638,7 +685,7 @@ func (s *RealtimeSession) RecvEvent(ctx context.Context) (*RealtimeEvent, error)
 func (s *RealtimeSession) Close() error {
 	s.closeOnce.Do(func() {
 		// Best-effort finish signals.
-		_ = s.sendJSONEvent(context.Background(), realtimeFinishSessionEvent, map[string]any{"session_id": s.sessionID})
+		_ = s.sendJSONEvent(context.Background(), realtimeFinishSessionEvent, map[string]any{})
 		_ = s.conn.sendConnectionFinish(context.Background())
 
 		close(s.closed)
@@ -679,9 +726,6 @@ func (s *RealtimeSession) guardSend(ctx context.Context) error {
 func (s *RealtimeSession) sendJSONEvent(ctx context.Context, event int32, body map[string]any) error {
 	if body == nil {
 		body = map[string]any{}
-	}
-	if body["session_id"] == nil {
-		body["session_id"] = s.sessionID
 	}
 
 	payload, err := json.Marshal(body)
@@ -808,9 +852,15 @@ func (s *RealtimeSession) decodeFrame(frame *protocol.ParsedFrame) (*RealtimeEve
 	}
 
 	decodeEventPayload(evt)
+	if evt.Error != nil {
+		withErrorMetadata(evt.Error, responseMetadata{ReqID: s.sessionID, ConnectID: s.conn.connectID})
+		evt.ReqID = evt.Error.ReqID
+		evt.TraceID = evt.Error.TraceID
+		evt.LogID = evt.Error.LogID
+	}
 	s.markFinalOnce(evt)
 
-	if evt.Error != nil {
+	if evt.Error != nil && (evt.Type == EventSessionFailed || evt.Type == EventConnectionFailed) {
 		return evt, wrapRealtimeEventError(evt.Type, evt.Error)
 	}
 	if evt.Type == EventSessionFailed || evt.Type == EventConnectionFailed {
@@ -917,10 +967,10 @@ func normalizeRealtimeConfig(cfg *RealtimeConfig) (RealtimeConfig, error) {
 	}
 
 	if base.TTS.AudioConfig.Format == "" {
-		base.TTS.AudioConfig.Format = FormatPCM
+		base.TTS.AudioConfig.Format = FormatPCMS16LE
 	}
 	if base.TTS.AudioConfig.SampleRate == 0 {
-		base.TTS.AudioConfig.SampleRate = SampleRate16000
+		base.TTS.AudioConfig.SampleRate = SampleRate24000
 	}
 	if base.TTS.AudioConfig.Channel == 0 {
 		base.TTS.AudioConfig.Channel = 1
@@ -941,6 +991,9 @@ func normalizeRealtimeConfig(cfg *RealtimeConfig) (RealtimeConfig, error) {
 	if strings.TrimSpace(base.TTS.Speaker) == "" {
 		return base, newAPIError(CodeParamError, "tts.speaker is required")
 	}
+	if strings.TrimSpace(base.ResourceID) != "" {
+		return base, newAPIError(CodeParamError, "resource_id must be configured with WithResourceID")
+	}
 	if err := util.ValidateFormat(string(base.TTS.AudioConfig.Format)); err != nil {
 		return base, newAPIError(CodeParamError, err.Error())
 	}
@@ -960,7 +1013,13 @@ func normalizeRealtimeConfig(cfg *RealtimeConfig) (RealtimeConfig, error) {
 	if err != nil {
 		return base, err
 	}
+	if model == "" {
+		return base, newAPIError(CodeParamError, "realtime model is required")
+	}
 	base.Model = model
+	if err := normalizeRealtimeInstructions(&base); err != nil {
+		return base, err
+	}
 	if err := validateRealtimeRate("speech_rate", base.TTS.AudioConfig.SpeechRate); err != nil {
 		return base, err
 	}
@@ -994,8 +1053,8 @@ func normalizeRealtimeConfig(cfg *RealtimeConfig) (RealtimeConfig, error) {
 			return base, newAPIError(CodeParamError, "asr.extra.end_smooth_window_ms must be between 500 and 50000")
 		}
 	}
-	if base.Dialog.Extra != nil && base.Dialog.Extra.VolcWebsearchResultCount > 10 {
-		return base, newAPIError(CodeParamError, "dialog.extra.volc_websearch_result_count must be <= 10")
+	if err := validateRealtimeCapabilities(base); err != nil {
+		return base, err
 	}
 
 	base.History = cloneConversationHistory(base.History)
@@ -1003,6 +1062,74 @@ func normalizeRealtimeConfig(cfg *RealtimeConfig) (RealtimeConfig, error) {
 	base.Props = cloneGenerationProps(base.Props)
 
 	return base, nil
+}
+
+func normalizeRealtimeInstructions(cfg *RealtimeConfig) error {
+	if cfg == nil {
+		return newAPIError(CodeParamError, "realtime config is required")
+	}
+
+	switch cfg.Model {
+	case RealtimeModelO20:
+		if cfg.Dialog.CharacterManifest != "" {
+			return newAPIError(CodeParamError, "dialog.character_manifest is not supported by O20")
+		}
+		if cfg.Instructions != "" {
+			if cfg.Dialog.SystemRole != "" && cfg.Dialog.SystemRole != cfg.Instructions {
+				return newAPIError(CodeParamError, "instructions conflict with dialog.system_role")
+			}
+			cfg.Dialog.SystemRole = cfg.Instructions
+		}
+	case RealtimeModelSC20:
+		if cfg.Dialog.BotName != "" || cfg.Dialog.SystemRole != "" || cfg.Dialog.SpeakingStyle != "" {
+			return newAPIError(CodeParamError, "dialog O20 fields are not supported by SC20")
+		}
+		if cfg.Instructions != "" {
+			if cfg.Dialog.CharacterManifest != "" && cfg.Dialog.CharacterManifest != cfg.Instructions {
+				return newAPIError(CodeParamError, "instructions conflict with dialog.character_manifest")
+			}
+			cfg.Dialog.CharacterManifest = cfg.Instructions
+		}
+	}
+	return nil
+}
+
+func validateRealtimeCapabilities(cfg RealtimeConfig) error {
+	if cfg.Dialog.Extra != nil {
+		extra := cfg.Dialog.Extra
+		if extra.VolcWebsearchResultCount < 0 || extra.VolcWebsearchResultCount > 10 {
+			return newAPIError(CodeParamError, "dialog.extra.volc_websearch_result_count must be in range [0,10]")
+		}
+		switch extra.VolcWebsearchType {
+		case "", "web", "web_summary", "web_agent":
+		default:
+			return newAPIError(CodeParamError, "dialog.extra.volc_websearch_type must be one of [web,web_summary,web_agent]")
+		}
+		if boolValue(extra.EnableVolcWebsearch) {
+			if strings.TrimSpace(extra.VolcWebsearchAPIKey) == "" {
+				return newAPIError(CodeParamError, "dialog.extra.volc_websearch_api_key is required when web search is enabled")
+			}
+			if extra.VolcWebsearchType == "web_agent" && strings.TrimSpace(extra.VolcWebsearchBotID) == "" {
+				return newAPIError(CodeParamError, "dialog.extra.volc_websearch_bot_id is required for web_agent")
+			}
+		}
+		if cfg.Model == RealtimeModelSC20 && boolValue(extra.EnableMusic) {
+			return newAPIError(CodeParamError, "dialog.extra.enable_music is not supported by SC20")
+		}
+	}
+
+	if cfg.TTS.Extra != nil {
+		switch cfg.TTS.Extra.ExplicitDialect {
+		case "", "dongbei", "sichuan", "shaanxi":
+		default:
+			return newAPIError(CodeParamError, "tts.extra.explicit_dialect must be one of [dongbei,sichuan,shaanxi]")
+		}
+		if cfg.Model == RealtimeModelSC20 && cfg.TTS.Extra.TTS20Model != "" {
+			return newAPIError(CodeParamError, "tts.extra.tts_2.0_model is not supported by SC20")
+		}
+	}
+
+	return nil
 }
 
 func buildRealtimeStartPayload(cfg RealtimeConfig) ([]byte, error) {
@@ -1100,18 +1227,59 @@ func buildRealtimeASRPayload(cfg RealtimeASRConfig) map[string]any {
 	return payload
 }
 
-func buildRealtimeUpdateConfigPayload(cfg RealtimeUpdateConfig) (map[string]any, error) {
+func buildRealtimeUpdateConfigPayload(cfg RealtimeUpdateConfig, model RealtimeModelVersion) (map[string]any, error) {
 	payload := map[string]any{}
 	if cfg.TTS != nil {
-		normalized := *cfg.TTS
-		if strings.TrimSpace(normalized.Speaker) == "" {
+		if strings.TrimSpace(cfg.TTS.Speaker) == "" {
 			return nil, newAPIError(CodeParamError, "tts.speaker is required")
 		}
-		tts := buildRealtimeTTSPayload(normalized)
+		if cfg.TTS.AudioConfig.Channel != 0 || cfg.TTS.AudioConfig.Format != "" || cfg.TTS.AudioConfig.SampleRate != 0 || cfg.TTS.AudioConfig.Bits != 0 || cfg.TTS.Extra != nil {
+			return nil, newAPIError(CodeParamError, "UpdateConfig supports only tts.speaker, speech_rate, and loudness_rate")
+		}
+		if err := validateRealtimeRate("speech_rate", cfg.TTS.AudioConfig.SpeechRate); err != nil {
+			return nil, err
+		}
+		if err := validateRealtimeRate("loudness_rate", cfg.TTS.AudioConfig.LoudnessRate); err != nil {
+			return nil, err
+		}
+		audioConfig := map[string]any{}
+		if cfg.TTS.AudioConfig.SpeechRate != 0 {
+			audioConfig["speech_rate"] = cfg.TTS.AudioConfig.SpeechRate
+		}
+		if cfg.TTS.AudioConfig.LoudnessRate != 0 {
+			audioConfig["loudness_rate"] = cfg.TTS.AudioConfig.LoudnessRate
+		}
+		tts := map[string]any{"speaker": strings.TrimSpace(cfg.TTS.Speaker)}
+		if len(audioConfig) > 0 {
+			tts["audio_config"] = audioConfig
+		}
 		payload["tts"] = tts
 	}
 	if cfg.Dialog != nil {
-		dialog := buildRealtimeDialogPayload(*cfg.Dialog)
+		if cfg.Dialog.CharacterManifest != "" || len(cfg.Dialog.DialogContext) > 0 || cfg.Dialog.Extra != nil {
+			return nil, newAPIError(CodeParamError, "UpdateConfig contains unsupported dialog fields")
+		}
+		if model == RealtimeModelSC20 && (cfg.Dialog.BotName != "" || cfg.Dialog.SystemRole != "" || cfg.Dialog.SpeakingStyle != "") {
+			return nil, newAPIError(CodeParamError, "UpdateConfig O20 dialog fields are not supported by SC20")
+		}
+		dialog := map[string]any{}
+		if cfg.Dialog.DialogID != "" {
+			dialog["dialog_id"] = cfg.Dialog.DialogID
+		}
+		if cfg.Dialog.BotName != "" {
+			dialog["bot_name"] = cfg.Dialog.BotName
+		}
+		if cfg.Dialog.SystemRole != "" {
+			dialog["system_role"] = cfg.Dialog.SystemRole
+		}
+		if cfg.Dialog.SpeakingStyle != "" {
+			dialog["speaking_style"] = cfg.Dialog.SpeakingStyle
+		}
+		if cfg.Dialog.Location != nil {
+			if location := structToMap(cfg.Dialog.Location); len(location) > 0 {
+				dialog["location"] = location
+			}
+		}
 		if len(dialog) > 0 {
 			payload["dialog"] = dialog
 		}
@@ -1120,6 +1288,81 @@ func buildRealtimeUpdateConfigPayload(cfg RealtimeUpdateConfig) (map[string]any,
 		return nil, newAPIError(CodeParamError, "update config is empty")
 	}
 	return payload, nil
+}
+
+func buildRealtimeConversationCreateItems(items []RealtimeConversationItem) ([]map[string]any, error) {
+	if len(items) == 0 || len(items) > 40 {
+		return nil, newAPIError(CodeParamError, "conversation create requires 1 to 40 items")
+	}
+	if len(items)%2 != 0 {
+		return nil, newAPIError(CodeParamError, "conversation create requires complete user/assistant pairs")
+	}
+
+	withTimestamp := items[0].Timestamp != 0
+	previousTimestamp := int64(0)
+	result := make([]map[string]any, 0, len(items))
+	for i, item := range items {
+		wantRole := "user"
+		if i%2 == 1 {
+			wantRole = "assistant"
+		}
+		if item.Role != wantRole {
+			return nil, newAPIError(CodeParamError, "conversation create roles must alternate user and assistant")
+		}
+		if strings.TrimSpace(item.Text) == "" {
+			return nil, newAPIError(CodeParamError, "conversation create text is required")
+		}
+		if strings.TrimSpace(item.ItemID) != "" {
+			return nil, newAPIError(CodeParamError, "conversation create does not accept item_id")
+		}
+		if (item.Timestamp != 0) != withTimestamp {
+			return nil, newAPIError(CodeParamError, "conversation create timestamps must be all set or all omitted")
+		}
+		if withTimestamp && item.Timestamp <= previousTimestamp {
+			return nil, newAPIError(CodeParamError, "conversation create timestamps must be strictly increasing")
+		}
+		if withTimestamp && realtimeTimestampIsFuture(item.Timestamp, time.Now()) {
+			return nil, newAPIError(CodeParamError, "conversation create timestamp must not be in the future")
+		}
+
+		projected := map[string]any{"role": item.Role, "text": item.Text}
+		if withTimestamp {
+			projected["timestamp"] = item.Timestamp
+			previousTimestamp = item.Timestamp
+		}
+		result = append(result, projected)
+	}
+	return result, nil
+}
+
+func realtimeTimestampIsFuture(timestamp int64, now time.Time) bool {
+	switch {
+	case timestamp >= 100_000_000_000_000_000:
+		return timestamp > now.UnixNano()
+	case timestamp >= 100_000_000_000_000:
+		return timestamp > now.UnixMicro()
+	case timestamp >= 100_000_000_000:
+		return timestamp > now.UnixMilli()
+	default:
+		return timestamp > now.Unix()
+	}
+}
+
+func buildRealtimeConversationUpdateItems(items []RealtimeConversationItem) ([]map[string]any, error) {
+	if len(items) == 0 || len(items) > 40 {
+		return nil, newAPIError(CodeParamError, "conversation update requires 1 to 40 items")
+	}
+	result := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		if strings.TrimSpace(item.ItemID) == "" || strings.TrimSpace(item.Text) == "" {
+			return nil, newAPIError(CodeParamError, "conversation update requires item_id and text")
+		}
+		if item.Role != "" || item.Timestamp != 0 {
+			return nil, newAPIError(CodeParamError, "conversation update accepts only item_id and text")
+		}
+		result = append(result, map[string]any{"item_id": item.ItemID, "text": item.Text})
+	}
+	return result, nil
 }
 
 func buildRealtimeTTSPayload(cfg RealtimeTTSConfig) map[string]any {
@@ -1210,7 +1453,7 @@ func decodeEventPayload(evt *RealtimeEvent) {
 
 		IsFinal bool `json:"is_final"`
 
-		Code    int    `json:"code"`
+		Code    any    `json:"code"`
 		Message string `json:"message"`
 		Error   string `json:"error"`
 
@@ -1299,7 +1542,19 @@ func decodeEventPayload(evt *RealtimeEvent) {
 		}
 	}
 
-	if payload.Code != 0 {
+	code := realtimeStatusCode(payload.Code)
+	statusCode := realtimeStatusCode(payload.StatusCode)
+	shouldMapError := code != 0
+	if (evt.Type == EventConnectionFailed || evt.Type == EventSessionFailed) && (payload.Error != "" || payload.Message != "") {
+		shouldMapError = true
+	}
+	if evt.Type == EventDialogCommonError && (evt.StatusCode != "" || payload.Message != "") {
+		shouldMapError = true
+	}
+	if evt.Type == EventConversationDeleted && evt.StatusCode != "" && !realtimeSuccessfulStatus(evt.StatusCode) {
+		shouldMapError = true
+	}
+	if shouldMapError {
 		message := payload.Message
 		if message == "" {
 			message = payload.Error
@@ -1307,14 +1562,80 @@ func decodeEventPayload(evt *RealtimeEvent) {
 		if message == "" {
 			message = "realtime event error"
 		}
+		if code == 0 {
+			code = statusCode
+		}
+		if code == 0 {
+			code = CodeServerError
+		}
 		evt.Error = &Error{
-			Code:    payload.Code,
+			Code:    code,
 			Message: message,
 			ReqID:   meta.ReqID,
 			TraceID: meta.TraceID,
 			LogID:   meta.LogID,
 		}
 	}
+}
+
+func realtimePayloadError(data []byte, fallbackCode int, fallbackMessage string) error {
+	evt := &RealtimeEvent{Payload: copyBytes(data)}
+	decodeEventPayload(evt)
+	if evt.Error != nil {
+		return evt.Error
+	}
+
+	var payload struct {
+		Code       any    `json:"code"`
+		StatusCode any    `json:"status_code"`
+		Message    string `json:"message"`
+		Error      string `json:"error"`
+	}
+	_ = json.Unmarshal(data, &payload)
+	code := realtimeStatusCode(payload.Code)
+	if code == 0 {
+		code = realtimeStatusCode(payload.StatusCode)
+	}
+	if code == 0 {
+		code = fallbackCode
+	}
+	if code == 0 {
+		code = CodeServerError
+	}
+	message := payload.Message
+	if message == "" {
+		message = payload.Error
+	}
+	if message == "" {
+		message = fallbackMessage
+	}
+	meta := parseResponseMetadata(data, responseMetadata{})
+	return &Error{Code: code, Message: message, ReqID: meta.ReqID, TraceID: meta.TraceID, LogID: meta.LogID, ConnectID: meta.ConnectID}
+}
+
+func realtimeStatusCode(value any) int {
+	text := strings.TrimSpace(realtimeString(value))
+	if text == "" {
+		return 0
+	}
+	code, err := strconv.Atoi(text)
+	if err != nil {
+		return 0
+	}
+	return code
+}
+
+func realtimeSuccessfulStatus(status string) bool {
+	switch strings.TrimSpace(status) {
+	case "", "0", "200", "20000000", strconv.Itoa(CodeSuccess):
+		return true
+	default:
+		return false
+	}
+}
+
+func boolValue(value *bool) bool {
+	return value != nil && *value
 }
 
 func validateRealtimeInputMode(mode RealtimeInputMode) error {

@@ -73,6 +73,11 @@ type RealtimeConfig struct {
 	TTS    RealtimeTTSConfig    `json:"tts" yaml:"tts"`
 	Dialog RealtimeDialogConfig `json:"dialog" yaml:"dialog"`
 
+	// Instructions is the model-independent initial system/persona instruction.
+	// It is materialized into a model-specific dialog field and is never sent as
+	// a literal "instructions" key.
+	Instructions string `json:"-" yaml:"instructions,omitempty"`
+
 	Prompt  RealtimePromptConfig          `json:"prompt" yaml:"prompt,omitempty"`
 	Props   RealtimeGenerationProps       `json:"props" yaml:"props,omitempty"`
 	History []RealtimeConversationMessage `json:"history,omitempty" yaml:"history,omitempty"`
@@ -80,7 +85,10 @@ type RealtimeConfig struct {
 	InputMode RealtimeInputMode    `json:"input_mode,omitempty" yaml:"input_mode,omitempty"`
 	Model     RealtimeModelVersion `json:"model,omitempty" yaml:"model,omitempty"`
 
-	ResourceID string `json:"resource_id,omitempty" yaml:"resource_id,omitempty"`
+	// Deprecated: configure the WebSocket handshake resource through
+	// WithResourceID. A non-empty value is rejected because a session config
+	// cannot change an already-open connection header.
+	ResourceID string `json:"-" yaml:"resource_id,omitempty"`
 
 	// Local runtime controls (not sent to server).
 	EventBuffer         int           `json:"-" yaml:"-"`
@@ -285,18 +293,18 @@ type RealtimeUsage struct {
 	OutputAudioTokens int `json:"output_audio_tokens,omitempty"`
 }
 
-// DefaultRealtimeConfig returns a baseline realtime config.
+// DefaultRealtimeConfig returns a baseline realtime config. Callers must set a
+// model and a compatible speaker before opening a session.
 func DefaultRealtimeConfig() RealtimeConfig {
 	return RealtimeConfig{
 		ASR: RealtimeASRConfig{
 			Language: LanguageZhCN,
 		},
 		TTS: RealtimeTTSConfig{
-			Speaker: "zh_female_cancan",
 			AudioConfig: RealtimeAudioConfig{
 				Channel:    1,
-				Format:     FormatPCM,
-				SampleRate: SampleRate16000,
+				Format:     FormatPCMS16LE,
+				SampleRate: SampleRate24000,
 				Bits:       16,
 			},
 		},
