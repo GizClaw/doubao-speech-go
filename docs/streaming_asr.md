@@ -67,7 +67,7 @@ from an explicit `false` or `0`.
 For example, configure forced endpointing without using an untyped request map:
 
 ```go
-endWindowSize := 800
+endWindowSize := 200
 forceToSpeechTime := 0
 
 config := &doubaospeech.ASRV2Config{
@@ -240,7 +240,7 @@ Request fields:
 | `enable_accelerate_text` | bool | `Request.EnableAccelerateText` | Accelerates first-character return with lower first-character accuracy. |
 | `accelerate_score` | int | `Request.AccelerateScore` | Works with `enable_accelerate_text`; range `[0,20]`, higher means faster first character. |
 | `vad_segment_duration` | int | `Request.VADSegmentDuration` | Semantic segmentation max silence threshold in ms; default `3000`; ignored when `end_window_size` is set. |
-| `end_window_size` | int | `Request.EndWindowSize` | Forced endpointing time in ms; default `800`, minimum `200`; outputs `definite`. |
+| `end_window_size` | int | `Request.EndWindowSize` | Enables forced endpointing with this silence duration in ms; minimum `200`; outputs `definite`. When omitted, the service can follow the longer semantic-segmentation path. |
 | `force_to_speech_time` | int | `Request.ForceToSpeechTime` | Minimum audio duration before endpointing; requires `end_window_size`; recommended `1000`. Use a pointer to send an explicit `0`. |
 | `sensitive_words_filter` | string | `Request.SensitiveWordsFilter` | Supports no-op, empty replacement, or `*` replacement. It is a pointer so an explicit empty string is preserved. |
 | `enable_poi_fc` | bool | `Request.EnablePOIFC` | POI function call; supported by nostream and async with second-pass. |
@@ -575,13 +575,16 @@ Run the credential-backed VAD E2E test explicitly:
 ```bash
 cp tests/e2e/.env.example tests/e2e/.env
 # Fill tests/e2e/.env with the Dev ASR credential, then run:
-go test ./tests/e2e -run TestASRV2VADEndpointing -count=1 -v
+go test ./tests/e2e -run TestASRV2EndpointingParametersReduceShortUtteranceLatency -count=1 -v
 ```
 
-The live test sends the PCM fixture in real-time-sized chunks, then streams
-silence without an audio EOS. It requires a definite transcript within four
-seconds, proving that the typed VAD request is accepted and provider
-endpointing completes independently of an explicit final packet. The test is
-skipped unless `DOUBAO_RUN_LIVE=1` because it consumes a paid provider request.
-The test loads `tests/e2e/.env` first and falls back to the repository-root
-`.env`; already exported environment variables take precedence over file values.
+The live test sends the same short PCM utterance twice in real-time-sized
+chunks. The baseline leaves endpointing parameters unset; the tuned trial sets
+`end_window_size=200` and `force_to_speech_time=0`. Both trials stream silence
+without an audio EOS and require a non-empty `definite` transcript. The tuned
+trial must save at least 250 ms, proving that the typed endpointing parameters
+reduce the provider-side short-utterance finalization delay rather than merely
+serializing successfully. The test is skipped unless `DOUBAO_RUN_LIVE=1`
+because it consumes paid provider requests. It loads `tests/e2e/.env` first and
+falls back to the repository-root `.env`; already exported environment
+variables take precedence over file values.

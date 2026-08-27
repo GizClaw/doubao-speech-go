@@ -18,16 +18,21 @@ import (
 )
 
 const (
-	asrV2AudioPath     = "../../examples/asr_v2_sauc_ws/sample_zh_16k.pcm"
-	asrV2ChunkDuration = 100 * time.Millisecond
-	asrV2ChunkSize     = 3200
-	asrV2VADDeadline   = 4 * time.Second
+	asrV2AudioPath            = "../../examples/asr_v2_sauc_ws/sample_zh_16k.pcm"
+	asrV2ChunkDuration        = 100 * time.Millisecond
+	asrV2ChunkSize            = 3200
+	asrV2ShortUtteranceStart  = 960 * time.Millisecond
+	asrV2ShortUtteranceEnd    = 3210 * time.Millisecond
+	asrV2VADDeadline          = 5 * time.Second
+	asrV2TunedEndWindowSize   = 200
+	asrV2MinimumLatencySaving = 250 * time.Millisecond
 )
 
-// TestASRV2VADEndpointing verifies that BigASR accepts the typed VAD request
-// and emits a definite utterance after streamed silence without an explicit
-// final audio packet. It is opt-in because it uses paid credentials.
-func TestASRV2VADEndpointing(t *testing.T) {
+// TestASRV2EndpointingParametersReduceShortUtteranceLatency compares the same
+// short utterance with the provider defaults and a shorter endpointing window.
+// Neither trial sends a final audio packet before BigASR emits a definite
+// utterance. It is opt-in because it uses paid credentials.
+func TestASRV2EndpointingParametersReduceShortUtteranceLatency(t *testing.T) {
 	loadE2EEnv(t)
 	if os.Getenv("DOUBAO_RUN_LIVE") != "1" {
 		t.Skip("set DOUBAO_RUN_LIVE=1 in tests/e2e/.env to run the ASR E2E test")
@@ -53,13 +58,11 @@ func TestASRV2VADEndpointing(t *testing.T) {
 	if bytes.HasPrefix(bytes.TrimSpace(audio), []byte("version https://git-lfs.github.com/spec/v1")) {
 		t.Fatal("ASR E2E fixture is a Git LFS pointer; run git lfs pull")
 	}
+	audio = shortPCMUtterance(t, audio, asrV2ShortUtteranceStart, asrV2ShortUtteranceEnd)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
 	defer cancel()
 
-	endWindowSize := 800
-	forceToSpeechTime := 0
-	vadSegmentDuration := 3000
 	falseValue := false
 	client := doubaospeech.NewClient(
 		appID,
@@ -67,26 +70,72 @@ func TestASRV2VADEndpointing(t *testing.T) {
 		doubaospeech.WithResourceID(resourceID),
 		doubaospeech.WithUserID("asr-v2-e2e"),
 	)
+	baseline := runASRV2VADTrial(t, ctx, client, audio, &doubaospeech.ASRV2RequestConfig{
+		EnableITN:  &falseValue,
+		EnablePunc: &falseValue,
+		ResultType: "full",
+	})
+
+	forceToSpeechTime := 0
+	endWindowSize := asrV2TunedEndWindowSize
+	tuned := runASRV2VADTrial(t, ctx, client, audio, &doubaospeech.ASRV2RequestConfig{
+		EnableITN:         &falseValue,
+		EnablePunc:        &falseValue,
+		ResultType:        "full",
+		EndWindowSize:     &endWindowSize,
+		ForceToSpeechTime: &forceToSpeechTime,
+	})
+
+	saving := baseline.latency - tuned.latency
+	t.Logf(
+		"BigASR short-utterance VAD latency: default=%s tuned=%s saving=%s default_text=%q tuned_text=%q resource=%s",
+		baseline.latency,
+		tuned.latency,
+		saving,
+		baseline.text,
+		tuned.text,
+		resourceID,
+	)
+	if tuned.text != baseline.text {
+		t.Fatalf("BigASR tuned transcript = %q, want baseline transcript %q", tuned.text, baseline.text)
+	}
+	if saving < asrV2MinimumLatencySaving {
+		t.Fatalf(
+			"BigASR end_window_size=%d saved %s, want at least %s over provider defaults",
+			asrV2TunedEndWindowSize,
+			saving,
+			asrV2MinimumLatencySaving,
+		)
+	}
+}
+
+type asrDefiniteResult struct {
+	text       string
+	receivedAt time.Time
+	latency    time.Duration
+}
+
+func runASRV2VADTrial(
+	t *testing.T,
+	ctx context.Context,
+	client *doubaospeech.Client,
+	audio []byte,
+	request *doubaospeech.ASRV2RequestConfig,
+) asrDefiniteResult {
+	t.Helper()
 	session, err := client.ASRV2.OpenStreamSession(ctx, &doubaospeech.ASRV2Config{
 		Format:     doubaospeech.FormatPCM,
 		SampleRate: doubaospeech.SampleRate16000,
-		Request: &doubaospeech.ASRV2RequestConfig{
-			EnableITN:          &falseValue,
-			EnablePunc:         &falseValue,
-			ResultType:         "full",
-			VADSegmentDuration: &vadSegmentDuration,
-			EndWindowSize:      &endWindowSize,
-			ForceToSpeechTime:  &forceToSpeechTime,
-		},
+		Request:    request,
 	})
 	if err != nil {
 		t.Fatalf("open ASR E2E session: %v", err)
 	}
 	defer session.Close()
 
-	finals := make(chan asrFinal, 16)
+	finals := make(chan asrDefiniteResult, 16)
 	recvErrors := make(chan error, 1)
-	go receiveASRFinals(session, finals, recvErrors)
+	go receiveASRDefinites(session, finals, recvErrors)
 
 	for offset := 0; offset < len(audio); offset += asrV2ChunkSize {
 		end := min(offset+asrV2ChunkSize, len(audio))
@@ -117,11 +166,11 @@ func TestASRV2VADEndpointing(t *testing.T) {
 			if latency > asrV2VADDeadline {
 				t.Fatalf("BigASR VAD final latency = %s, want <= %s", latency, asrV2VADDeadline)
 			}
-			t.Logf("BigASR VAD final latency=%s transcript=%q resource=%s", latency, final.text, resourceID)
 			if err := session.SendAudio(ctx, nil, true); err != nil {
 				t.Fatalf("finish ASR E2E session: %v", err)
 			}
-			return
+			final.latency = latency
+			return final
 		case err := <-recvErrors:
 			t.Fatalf("receive ASR E2E result: %v", err)
 		case <-ticker.C:
@@ -136,12 +185,7 @@ func TestASRV2VADEndpointing(t *testing.T) {
 	}
 }
 
-type asrFinal struct {
-	text       string
-	receivedAt time.Time
-}
-
-func receiveASRFinals(session *doubaospeech.ASRV2Session, finals chan<- asrFinal, recvErrors chan<- error) {
+func receiveASRDefinites(session *doubaospeech.ASRV2Session, finals chan<- asrDefiniteResult, recvErrors chan<- error) {
 	for result, err := range session.Recv() {
 		if err != nil {
 			if !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
@@ -165,11 +209,11 @@ func receiveASRFinals(session *doubaospeech.ASRV2Session, finals chan<- asrFinal
 		if !definite || text == "" {
 			continue
 		}
-		finals <- asrFinal{text: text, receivedAt: time.Now()}
+		finals <- asrDefiniteResult{text: text, receivedAt: time.Now()}
 	}
 }
 
-func drainASRFinals(finals <-chan asrFinal) {
+func drainASRFinals(finals <-chan asrDefiniteResult) {
 	for {
 		select {
 		case <-finals:
@@ -177,6 +221,17 @@ func drainASRFinals(finals <-chan asrFinal) {
 			return
 		}
 	}
+}
+
+func shortPCMUtterance(t *testing.T, audio []byte, start, end time.Duration) []byte {
+	t.Helper()
+	const bytesPerSecond = 16000 * 2
+	startOffset := int(int64(start) * bytesPerSecond / int64(time.Second))
+	endOffset := int(int64(end) * bytesPerSecond / int64(time.Second))
+	if startOffset < 0 || startOffset >= endOffset || endOffset > len(audio) {
+		t.Fatalf("short ASR fixture range [%s, %s] is outside %d-byte PCM input", start, end, len(audio))
+	}
+	return audio[startOffset:endOffset]
 }
 
 func waitInterval(t *testing.T, ctx context.Context, interval time.Duration) {

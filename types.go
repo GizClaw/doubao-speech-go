@@ -116,8 +116,9 @@ type ASRV2RequestConfig struct {
 	// in milliseconds. The service default is 3000. It is ignored when
 	// EndWindowSize is set.
 	VADSegmentDuration *int `json:"vad_segment_duration,omitempty" yaml:"vad_segment_duration,omitempty"`
-	// EndWindowSize is the forced endpointing silence duration in milliseconds.
-	// The service default is 800 and the minimum supported value is 200.
+	// EndWindowSize enables forced endpointing with this silence duration in
+	// milliseconds. The minimum supported value is 200. When omitted, the
+	// service can instead follow the longer semantic-segmentation path.
 	EndWindowSize *int `json:"end_window_size,omitempty" yaml:"end_window_size,omitempty"`
 	// ForceToSpeechTime is the minimum audio duration in milliseconds before
 	// forced endpointing can occur. It requires EndWindowSize to be set.
