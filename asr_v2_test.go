@@ -346,6 +346,11 @@ func TestNormalizeASRV2ConfigRejectsInvalidTypedParameters(t *testing.T) {
 			config:  ASRV2Config{Codec: "aac"},
 			wantErr: "codec must be raw or opus",
 		},
+		{
+			name:    "OGG with raw codec",
+			config:  ASRV2Config{Format: FormatOGG, Codec: ASRV2AudioCodecRaw},
+			wantErr: "ogg audio requires the opus codec",
+		},
 	}
 
 	for _, tt := range tests {
@@ -355,6 +360,19 @@ func TestNormalizeASRV2ConfigRejectsInvalidTypedParameters(t *testing.T) {
 				t.Fatalf("normalizeASRV2Config error = %v, want containing %q", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestNormalizeASRV2ConfigAcceptsOGGWithOpus(t *testing.T) {
+	config, err := normalizeASRV2Config(ASRV2Config{
+		Format: FormatOGG,
+		Codec:  ASRV2AudioCodecOpus,
+	})
+	if err != nil {
+		t.Fatalf("normalizeASRV2Config error = %v", err)
+	}
+	if config.Format != FormatOGG || config.Codec != ASRV2AudioCodecOpus {
+		t.Fatalf("format/codec = %q/%q, want %q/%q", config.Format, config.Codec, FormatOGG, ASRV2AudioCodecOpus)
 	}
 }
 

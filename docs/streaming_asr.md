@@ -569,3 +569,19 @@ DOUBAO_APP_ID=<your_app_id> \
 DOUBAO_API_KEY=<your_api_key> \
 go run ./examples/asr_v2_sauc_ws
 ```
+
+Run the credential-backed VAD E2E test explicitly:
+
+```bash
+cp tests/e2e/.env.example tests/e2e/.env
+# Fill tests/e2e/.env with the Dev ASR credential, then run:
+go test ./tests/e2e -run TestASRV2VADEndpointing -count=1 -v
+```
+
+The live test sends the PCM fixture in real-time-sized chunks, then streams
+silence without an audio EOS. It requires a definite transcript within four
+seconds, proving that the typed VAD request is accepted and provider
+endpointing completes independently of an explicit final packet. The test is
+skipped unless `DOUBAO_RUN_LIVE=1` because it consumes a paid provider request.
+The test loads `tests/e2e/.env` first and falls back to the repository-root
+`.env`; already exported environment variables take precedence over file values.

@@ -583,6 +583,9 @@ func normalizeASRV2Config(cfg ASRV2Config) (ASRV2Config, error) {
 	if cfg.Codec != "" && cfg.Codec != ASRV2AudioCodecRaw && cfg.Codec != ASRV2AudioCodecOpus {
 		return cfg, newAPIError(CodeParamError, "codec must be raw or opus")
 	}
+	if cfg.Format == FormatOGG && cfg.Codec != "" && cfg.Codec != ASRV2AudioCodecOpus {
+		return cfg, newAPIError(CodeParamError, "ogg audio requires the opus codec")
+	}
 	request := resolvedASRV2RequestConfig(cfg)
 	if err := util.ValidateResultType(request.ResultType); err != nil {
 		return cfg, newAPIError(CodeParamError, err.Error())
