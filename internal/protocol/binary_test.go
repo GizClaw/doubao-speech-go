@@ -45,6 +45,21 @@ func TestBuildAudioOnlyFlags(t *testing.T) {
 	}
 }
 
+func TestCheckedFrameCapacity(t *testing.T) {
+	capacity, err := checkedFrameCapacity(12, 100, 20)
+	if err != nil {
+		t.Fatalf("checkedFrameCapacity error = %v", err)
+	}
+	if capacity != 132 {
+		t.Fatalf("capacity = %d, want 132", capacity)
+	}
+
+	maxInt := int(^uint(0) >> 1)
+	if _, err := checkedFrameCapacity(12, maxInt); err == nil {
+		t.Fatal("checkedFrameCapacity expected oversized field error")
+	}
+}
+
 func TestParseServerFrameGzip(t *testing.T) {
 	original := []byte(`{"result":{"text":"hello"}}`)
 	var compressed bytes.Buffer

@@ -46,7 +46,7 @@ status by interface:
 
 | Mark | API | Endpoint | SDK surface | Notes |
 | --- | --- | --- | --- | --- |
-| 🟢 | Streaming ASR bidirectional | [Streaming ASR](docs/streaming_asr.md) | `client.ASRV2.OpenStreamSession` | Streams audio-only frames and parses full-server JSON results. Some upstream request options are not yet typed. |
+| 🟢 | Streaming ASR bidirectional | [Streaming ASR](docs/streaming_asr.md) | `client.ASRV2.OpenStreamSession` | Streams audio-only frames, exposes the complete typed BigASR request configuration, and parses full-server JSON results. |
 | ⚪ | Streaming ASR input-only result | [Streaming ASR](docs/streaming_asr.md) | none | Needs endpoint selection, final-packet behavior, and typed nostream options. |
 | ⚪ | Streaming ASR optimized bidirectional | [Streaming ASR](docs/streaming_asr.md) | none | Needs endpoint selection and typed async/nonstream option coverage. |
 | 🟡 | TTS WebSocket bidirectional | [TTS v2](docs/tts_v2.md) | `client.TTSV2.OpenStreamSession` | Lifecycle, text request, cancel, reuse, and audio chunks are implemented. Current config types cover `speaker`, `format`, `sample_rate`, and `resource_id`; advanced 2.0 fields still need typed options. |

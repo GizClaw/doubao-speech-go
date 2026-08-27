@@ -46,6 +46,8 @@ const (
 	CompressionGzip Compression = 0x1
 )
 
+const maxWireFieldLength = uint64(1<<32 - 1)
+
 // Realtime lifecycle events that affect protocol envelope fields.
 const (
 	EventStartConnection   int32 = 1
@@ -148,7 +150,11 @@ func BuildEventFrame(frame EventFrame) ([]byte, error) {
 		serialization = SerializationJSON
 	}
 
-	buf := bytes.NewBuffer(make([]byte, 0, 24+len(frame.Payload)+len(frame.SessionID)+len(frame.ConnectID)))
+	capacity, err := checkedFrameCapacity(24, len(frame.Payload), len(frame.SessionID), len(frame.ConnectID))
+	if err != nil {
+		return nil, err
+	}
+	buf := bytes.NewBuffer(make([]byte, 0, capacity))
 
 	// Header
 	buf.WriteByte(byte(Version1<<4) | 0x1) // header size = 1 * 4 bytes
@@ -214,7 +220,11 @@ func BuildEventFrame(frame EventFrame) ([]byte, error) {
 }
 
 func buildClientFrame(msgType MessageType, flags MessageFlags, ser Serialization, comp Compression, payload []byte) ([]byte, error) {
-	buf := bytes.NewBuffer(make([]byte, 0, 12+len(payload)))
+	capacity, err := checkedFrameCapacity(12, len(payload))
+	if err != nil {
+		return nil, err
+	}
+	buf := bytes.NewBuffer(make([]byte, 0, capacity))
 
 	// Header
 	buf.WriteByte(byte(Version1<<4) | 0x1) // header size = 1 * 4 bytes
@@ -236,6 +246,21 @@ func buildClientFrame(msgType MessageType, flags MessageFlags, ser Serialization
 	}
 
 	return buf.Bytes(), nil
+}
+
+func checkedFrameCapacity(base int, fieldLengths ...int) (int, error) {
+	maxInt := int(^uint(0) >> 1)
+	total := uint64(base)
+	for _, length := range fieldLengths {
+		if length < 0 || uint64(length) > maxWireFieldLength {
+			return 0, fmt.Errorf("protocol field length %d exceeds uint32", length)
+		}
+		total += uint64(length)
+		if total > uint64(maxInt) {
+			return 0, fmt.Errorf("protocol frame size %d exceeds platform int", total)
+		}
+	}
+	return int(total), nil
 }
 
 // ParseServerFrame parses a server binary frame.

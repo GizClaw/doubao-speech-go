@@ -8,6 +8,7 @@ import (
 	"io"
 	"iter"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -104,8 +105,14 @@ func TestOpenStreamSessionSendsStartFrame(t *testing.T) {
 	svc.dialer = dialer
 
 	session, err := svc.OpenStreamSession(context.Background(), &ASRV2Config{
-		Format:     FormatPCM,
-		SampleRate: SampleRate16000,
+		Format:            FormatPCM,
+		SampleRate:        SampleRate16000,
+		EnableITN:         true,
+		EnablePunc:        true,
+		EnableDiarization: true,
+		SpeakerNum:        2,
+		Hotwords:          []string{"legacy-hotword"},
+		ResultType:        "full",
 	})
 	if err != nil {
 		t.Fatalf("OpenStreamSession error = %v", err)
@@ -125,19 +132,247 @@ func TestOpenStreamSessionSendsStartFrame(t *testing.T) {
 		t.Fatalf("start frame type = %v, want full client", frame.MessageType)
 	}
 
-	var body map[string]any
+	var body asrV2StartPayload
 	if err := json.Unmarshal(frame.Payload, &body); err != nil {
 		t.Fatalf("unmarshal start payload: %v", err)
 	}
-	audio, ok := body["audio"].(map[string]any)
-	if !ok {
-		t.Fatalf("audio field missing")
-	}
-	if got := audio["format"]; got != string(FormatPCM) {
+	if got := body.Audio.Format; got != FormatPCM {
 		t.Fatalf("audio.format = %v, want %s", got, FormatPCM)
+	}
+	if body.Request.EnableITN == nil || !*body.Request.EnableITN || body.Request.EnablePunc == nil || !*body.Request.EnablePunc {
+		t.Fatalf("legacy ITN/punctuation fields were not preserved: %#v", body.Request)
+	}
+	if !body.Request.EnableDiarization || body.Request.SpeakerNum != 2 || !reflect.DeepEqual(body.Request.Hotwords, []string{"legacy-hotword"}) {
+		t.Fatalf("legacy diarization fields were not preserved: %#v", body.Request)
+	}
+	if body.Request.ResultType != "full" {
+		t.Fatalf("request.result_type = %q, want full", body.Request.ResultType)
+	}
+	if body.Request.ShowUtterances == nil || !*body.Request.ShowUtterances {
+		t.Fatalf("request.show_utterances = %v, want true by default", body.Request.ShowUtterances)
 	}
 	if got := dialer.headers.Get("X-Api-Resource-Id"); got != ResourceASRStreamV2 {
 		t.Fatalf("X-Api-Resource-Id = %q, want %q", got, ResourceASRStreamV2)
+	}
+}
+
+func TestOpenStreamSessionSendsTypedRequestParameters(t *testing.T) {
+	client := NewClient("test-app", WithAPIKey("key-test"), WithUserID("tester"))
+	conn := newFakeWSConn()
+	dialer := &fakeDialer{conn: conn}
+
+	svc := newASRServiceV2(client)
+	svc.dialer = dialer
+
+	trueValue := true
+	falseValue := false
+	accelerateScore := 12
+	vadSegmentDuration := 3000
+	endWindowSize := 800
+	forceToSpeechTime := 0
+	sensitiveWordsFilter := ""
+	session, err := svc.OpenStreamSession(context.Background(), &ASRV2Config{
+		Format:     FormatPCM,
+		SampleRate: SampleRate16000,
+		Language:   LanguageZhCN,
+		Codec:      ASRV2AudioCodecRaw,
+		User: &ASRV2UserConfig{
+			UID:        "typed-user",
+			DID:        "device-1",
+			Platform:   "Linux",
+			SDKVersion: "1.2.3",
+			AppVersion: "4.5.6",
+		},
+		Request: &ASRV2RequestConfig{
+			ModelName:              "bigmodel",
+			EnableNonstream:        &trueValue,
+			EnableITN:              &falseValue,
+			EnableSpeakerInfo:      &trueValue,
+			SSDVersion:             "200",
+			EnablePunc:             &falseValue,
+			EnableDDC:              &trueValue,
+			OutputZHVariant:        "tw",
+			EnableAutoLanguage:     &trueValue,
+			ShowUtterances:         &falseValue,
+			ShowSpeechRate:         &trueValue,
+			ShowVolume:             &trueValue,
+			EnableLanguageID:       &trueValue,
+			EnableEmotionDetection: &trueValue,
+			EnableGenderDetection:  &trueValue,
+			ResultType:             "full",
+			EnableAccelerateText:   &trueValue,
+			AccelerateScore:        &accelerateScore,
+			VADSegmentDuration:     &vadSegmentDuration,
+			EndWindowSize:          &endWindowSize,
+			ForceToSpeechTime:      &forceToSpeechTime,
+			SensitiveWordsFilter:   &sensitiveWordsFilter,
+			EnablePOIFC:            &trueValue,
+			EnableMusicFC:          &trueValue,
+			Corpus: &ASRV2CorpusConfig{
+				BoostingTableName: "boost-name",
+				BoostingTableID:   "boost-id",
+				CorrectTableName:  "correct-name",
+				CorrectTableID:    "correct-id",
+				Context: &ASRV2CorpusContext{
+					Hotwords: []ASRV2Hotword{{Word: "GizClaw"}},
+					CorrectWords: []ASRV2WordCorrection{
+						{Source: "giz claw", Target: "GizClaw"},
+					},
+					ContextType: "dialog_ctx",
+					ContextData: []ASRV2ContextEntry{
+						{Text: "previous turn"},
+						{ImageURL: "https://example.com/context.png"},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("OpenStreamSession error = %v", err)
+	}
+	defer session.Close()
+
+	writes := conn.writesSnapshot()
+	if len(writes) == 0 {
+		t.Fatalf("no writes sent")
+	}
+	frame, err := protocol.ParseServerFrame(writes[0])
+	if err != nil {
+		t.Fatalf("parse start frame: %v", err)
+	}
+
+	var body asrV2StartPayload
+	if err := json.Unmarshal(frame.Payload, &body); err != nil {
+		t.Fatalf("unmarshal start payload: %v", err)
+	}
+	wantRequest := asrV2WireRequest{
+		ReqID:                  session.reqID,
+		Sequence:               1,
+		ModelName:              "bigmodel",
+		EnableNonstream:        &trueValue,
+		EnableITN:              &falseValue,
+		EnableSpeakerInfo:      &trueValue,
+		SSDVersion:             "200",
+		EnablePunc:             &falseValue,
+		EnableDDC:              &trueValue,
+		OutputZHVariant:        "tw",
+		EnableAutoLanguage:     &trueValue,
+		ShowUtterances:         &falseValue,
+		ShowSpeechRate:         &trueValue,
+		ShowVolume:             &trueValue,
+		EnableLanguageID:       &trueValue,
+		EnableEmotionDetection: &trueValue,
+		EnableGenderDetection:  &trueValue,
+		ResultType:             "full",
+		EnableAccelerateText:   &trueValue,
+		AccelerateScore:        &accelerateScore,
+		VADSegmentDuration:     &vadSegmentDuration,
+		EndWindowSize:          &endWindowSize,
+		ForceToSpeechTime:      &forceToSpeechTime,
+		SensitiveWordsFilter:   &sensitiveWordsFilter,
+		EnablePOIFC:            &trueValue,
+		EnableMusicFC:          &trueValue,
+		Corpus: &asrV2WireCorpus{
+			BoostingTableName: "boost-name",
+			BoostingTableID:   "boost-id",
+			CorrectTableName:  "correct-name",
+			CorrectTableID:    "correct-id",
+			Context:           `{"hotwords":[{"word":"GizClaw"}],"correct_words":{"giz claw":"GizClaw"},"context_type":"dialog_ctx","context_data":[{"text":"previous turn"},{"image_url":"https://example.com/context.png"}]}`,
+		},
+	}
+	if !reflect.DeepEqual(body.Request, wantRequest) {
+		t.Fatalf("request = %#v, want %#v", body.Request, wantRequest)
+	}
+	wantUser := ASRV2UserConfig{
+		UID:        "typed-user",
+		DID:        "device-1",
+		Platform:   "Linux",
+		SDKVersion: "1.2.3",
+		AppVersion: "4.5.6",
+	}
+	if !reflect.DeepEqual(body.User, wantUser) {
+		t.Fatalf("user = %#v, want %#v", body.User, wantUser)
+	}
+	if body.Audio.Language != LanguageZhCN || body.Audio.Codec != ASRV2AudioCodecRaw {
+		t.Fatalf("audio language/codec = %q/%q, want %q/%q", body.Audio.Language, body.Audio.Codec, LanguageZhCN, ASRV2AudioCodecRaw)
+	}
+}
+
+func TestNormalizeASRV2ConfigRejectsInvalidTypedParameters(t *testing.T) {
+	endWindowTooSmall := 199
+	endWindowSize := 800
+	negativeForceToSpeechTime := -1
+	forceToSpeechTime := 0
+	accelerateScoreTooHigh := 21
+	negativeVADSegmentDuration := -1
+
+	tests := []struct {
+		name    string
+		config  ASRV2Config
+		wantErr string
+	}{
+		{
+			name:    "end window below minimum",
+			config:  ASRV2Config{Request: &ASRV2RequestConfig{EndWindowSize: &endWindowTooSmall}},
+			wantErr: "end_window_size must be at least 200 milliseconds",
+		},
+		{
+			name:    "negative VAD segment duration",
+			config:  ASRV2Config{Request: &ASRV2RequestConfig{VADSegmentDuration: &negativeVADSegmentDuration}},
+			wantErr: "vad_segment_duration must not be negative",
+		},
+		{
+			name:    "negative force to speech time",
+			config:  ASRV2Config{Request: &ASRV2RequestConfig{EndWindowSize: &endWindowSize, ForceToSpeechTime: &negativeForceToSpeechTime}},
+			wantErr: "force_to_speech_time must not be negative",
+		},
+		{
+			name:    "force to speech time without end window",
+			config:  ASRV2Config{Request: &ASRV2RequestConfig{ForceToSpeechTime: &forceToSpeechTime}},
+			wantErr: "force_to_speech_time requires end_window_size",
+		},
+		{
+			name:    "accelerate score above maximum",
+			config:  ASRV2Config{Request: &ASRV2RequestConfig{AccelerateScore: &accelerateScoreTooHigh}},
+			wantErr: "accelerate_score must be between 0 and 20",
+		},
+		{
+			name:    "unsupported Chinese variant",
+			config:  ASRV2Config{Request: &ASRV2RequestConfig{OutputZHVariant: "simplified"}},
+			wantErr: "output_zh_variant must be traditional, tw, or hk",
+		},
+		{
+			name:    "unsupported codec",
+			config:  ASRV2Config{Codec: "aac"},
+			wantErr: "codec must be raw or opus",
+		},
+		{
+			name:    "OGG with raw codec",
+			config:  ASRV2Config{Format: FormatOGG, Codec: ASRV2AudioCodecRaw},
+			wantErr: "ogg audio requires the opus codec",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := normalizeASRV2Config(tt.config)
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Fatalf("normalizeASRV2Config error = %v, want containing %q", err, tt.wantErr)
+			}
+		})
+	}
+}
+
+func TestNormalizeASRV2ConfigAcceptsOGGWithOpus(t *testing.T) {
+	config, err := normalizeASRV2Config(ASRV2Config{
+		Format: FormatOGG,
+		Codec:  ASRV2AudioCodecOpus,
+	})
+	if err != nil {
+		t.Fatalf("normalizeASRV2Config error = %v", err)
+	}
+	if config.Format != FormatOGG || config.Codec != ASRV2AudioCodecOpus {
+		t.Fatalf("format/codec = %q/%q, want %q/%q", config.Format, config.Codec, FormatOGG, ASRV2AudioCodecOpus)
 	}
 }
 
