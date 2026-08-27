@@ -1,6 +1,7 @@
 package doubaospeech
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -157,42 +158,53 @@ func (s *ASRV2Session) Close() error {
 }
 
 func (s *ASRV2Session) sendSessionStart(ctx context.Context) error {
-	req := map[string]any{
-		"user": map[string]any{
-			"uid": s.client.config.userID,
+	requestConfig := resolvedASRV2RequestConfig(s.cfg)
+	corpus, err := buildASRV2WireCorpus(requestConfig.Corpus)
+	if err != nil {
+		return wrapError(err, "marshal corpus context")
+	}
+	req := asrV2StartPayload{
+		User: resolvedASRV2UserConfig(s.cfg, s.client.config.userID),
+		Audio: asrV2StartAudio{
+			Format:     s.cfg.Format,
+			SampleRate: s.cfg.SampleRate,
+			Channel:    resolvedChannel(s.cfg),
+			Bits:       resolvedBits(s.cfg),
+			Language:   s.cfg.Language,
+			Codec:      s.cfg.Codec,
 		},
-		"audio": map[string]any{
-			"format":      s.cfg.Format,
-			"sample_rate": s.cfg.SampleRate,
-			"channel":     resolvedChannel(s.cfg),
-			"bits":        resolvedBits(s.cfg),
+		Request: asrV2WireRequest{
+			ReqID:                  s.reqID,
+			Sequence:               1,
+			ModelName:              requestConfig.ModelName,
+			EnableNonstream:        requestConfig.EnableNonstream,
+			EnableITN:              requestConfig.EnableITN,
+			EnableSpeakerInfo:      requestConfig.EnableSpeakerInfo,
+			SSDVersion:             requestConfig.SSDVersion,
+			EnablePunc:             requestConfig.EnablePunc,
+			EnableDDC:              requestConfig.EnableDDC,
+			OutputZHVariant:        requestConfig.OutputZHVariant,
+			EnableAutoLanguage:     requestConfig.EnableAutoLanguage,
+			ShowUtterances:         requestConfig.ShowUtterances,
+			ShowSpeechRate:         requestConfig.ShowSpeechRate,
+			ShowVolume:             requestConfig.ShowVolume,
+			EnableLanguageID:       requestConfig.EnableLanguageID,
+			EnableEmotionDetection: requestConfig.EnableEmotionDetection,
+			EnableGenderDetection:  requestConfig.EnableGenderDetection,
+			ResultType:             normalizedResultType(requestConfig.ResultType),
+			EnableAccelerateText:   requestConfig.EnableAccelerateText,
+			AccelerateScore:        requestConfig.AccelerateScore,
+			VADSegmentDuration:     requestConfig.VADSegmentDuration,
+			EndWindowSize:          requestConfig.EndWindowSize,
+			ForceToSpeechTime:      requestConfig.ForceToSpeechTime,
+			SensitiveWordsFilter:   requestConfig.SensitiveWordsFilter,
+			EnablePOIFC:            requestConfig.EnablePOIFC,
+			EnableMusicFC:          requestConfig.EnableMusicFC,
+			Corpus:                 corpus,
+			EnableDiarization:      s.cfg.EnableDiarization,
+			SpeakerNum:             s.cfg.SpeakerNum,
+			Hotwords:               s.cfg.Hotwords,
 		},
-		"request": map[string]any{
-			"reqid":           s.reqID,
-			"sequence":        1,
-			"show_utterances": true,
-			"result_type":     normalizedResultType(s.cfg.ResultType),
-		},
-	}
-
-	requestObj := req["request"].(map[string]any)
-	if s.cfg.Language != "" {
-		requestObj["language"] = s.cfg.Language
-	}
-	if s.cfg.EnableITN {
-		requestObj["enable_itn"] = true
-	}
-	if s.cfg.EnablePunc {
-		requestObj["enable_punc"] = true
-	}
-	if s.cfg.EnableDiarization {
-		requestObj["enable_diarization"] = true
-	}
-	if s.cfg.SpeakerNum > 0 {
-		requestObj["speaker_num"] = s.cfg.SpeakerNum
-	}
-	if len(s.cfg.Hotwords) > 0 {
-		requestObj["hotwords"] = s.cfg.Hotwords
 	}
 
 	jsonBody, err := json.Marshal(req)
@@ -211,10 +223,123 @@ func (s *ASRV2Session) sendSessionStart(ctx context.Context) error {
 	return s.writeBinary(packet)
 }
 
+type asrV2StartPayload struct {
+	User    ASRV2UserConfig  `json:"user"`
+	Audio   asrV2StartAudio  `json:"audio"`
+	Request asrV2WireRequest `json:"request"`
+}
+
+type asrV2StartAudio struct {
+	Format     AudioFormat     `json:"format"`
+	SampleRate SampleRate      `json:"sample_rate"`
+	Channel    int             `json:"channel"`
+	Bits       int             `json:"bits"`
+	Language   Language        `json:"language,omitempty"`
+	Codec      ASRV2AudioCodec `json:"codec,omitempty"`
+}
+
+type asrV2WireRequest struct {
+	ReqID                  string           `json:"reqid"`
+	Sequence               int              `json:"sequence"`
+	ModelName              string           `json:"model_name,omitempty"`
+	EnableNonstream        *bool            `json:"enable_nonstream,omitempty"`
+	EnableITN              *bool            `json:"enable_itn,omitempty"`
+	EnableSpeakerInfo      *bool            `json:"enable_speaker_info,omitempty"`
+	SSDVersion             string           `json:"ssd_version,omitempty"`
+	EnablePunc             *bool            `json:"enable_punc,omitempty"`
+	EnableDDC              *bool            `json:"enable_ddc,omitempty"`
+	OutputZHVariant        string           `json:"output_zh_variant,omitempty"`
+	EnableAutoLanguage     *bool            `json:"enable_auto_lang,omitempty"`
+	ShowUtterances         *bool            `json:"show_utterances,omitempty"`
+	ShowSpeechRate         *bool            `json:"show_speech_rate,omitempty"`
+	ShowVolume             *bool            `json:"show_volume,omitempty"`
+	EnableLanguageID       *bool            `json:"enable_lid,omitempty"`
+	EnableEmotionDetection *bool            `json:"enable_emotion_detection,omitempty"`
+	EnableGenderDetection  *bool            `json:"enable_gender_detection,omitempty"`
+	ResultType             string           `json:"result_type"`
+	EnableAccelerateText   *bool            `json:"enable_accelerate_text,omitempty"`
+	AccelerateScore        *int             `json:"accelerate_score,omitempty"`
+	VADSegmentDuration     *int             `json:"vad_segment_duration,omitempty"`
+	EndWindowSize          *int             `json:"end_window_size,omitempty"`
+	ForceToSpeechTime      *int             `json:"force_to_speech_time,omitempty"`
+	SensitiveWordsFilter   *string          `json:"sensitive_words_filter,omitempty"`
+	EnablePOIFC            *bool            `json:"enable_poi_fc,omitempty"`
+	EnableMusicFC          *bool            `json:"enable_music_fc,omitempty"`
+	Corpus                 *asrV2WireCorpus `json:"corpus,omitempty"`
+	EnableDiarization      bool             `json:"enable_diarization,omitempty"`
+	SpeakerNum             int              `json:"speaker_num,omitempty"`
+	Hotwords               []string         `json:"hotwords,omitempty"`
+}
+
+type asrV2WireCorpus struct {
+	BoostingTableName string `json:"boosting_table_name,omitempty"`
+	BoostingTableID   string `json:"boosting_table_id,omitempty"`
+	CorrectTableName  string `json:"correct_table_name,omitempty"`
+	CorrectTableID    string `json:"correct_table_id,omitempty"`
+	Context           string `json:"context,omitempty"`
+}
+
+type asrV2WireCorpusContext struct {
+	Hotwords     []ASRV2Hotword       `json:"hotwords,omitempty"`
+	CorrectWords asrV2WordCorrections `json:"correct_words,omitempty"`
+	ContextType  string               `json:"context_type,omitempty"`
+	ContextData  []ASRV2ContextEntry  `json:"context_data,omitempty"`
+}
+
+type asrV2WordCorrections []ASRV2WordCorrection
+
+func (corrections asrV2WordCorrections) MarshalJSON() ([]byte, error) {
+	var buf bytes.Buffer
+	buf.WriteByte('{')
+	for i, correction := range corrections {
+		if i > 0 {
+			buf.WriteByte(',')
+		}
+		source, err := json.Marshal(correction.Source)
+		if err != nil {
+			return nil, err
+		}
+		target, err := json.Marshal(correction.Target)
+		if err != nil {
+			return nil, err
+		}
+		buf.Write(source)
+		buf.WriteByte(':')
+		buf.Write(target)
+	}
+	buf.WriteByte('}')
+	return buf.Bytes(), nil
+}
+
+func buildASRV2WireCorpus(config *ASRV2CorpusConfig) (*asrV2WireCorpus, error) {
+	if config == nil {
+		return nil, nil
+	}
+	corpus := &asrV2WireCorpus{
+		BoostingTableName: config.BoostingTableName,
+		BoostingTableID:   config.BoostingTableID,
+		CorrectTableName:  config.CorrectTableName,
+		CorrectTableID:    config.CorrectTableID,
+	}
+	if config.Context != nil {
+		contextJSON, err := json.Marshal(asrV2WireCorpusContext{
+			Hotwords:     config.Context.Hotwords,
+			CorrectWords: asrV2WordCorrections(config.Context.CorrectWords),
+			ContextType:  config.Context.ContextType,
+			ContextData:  config.Context.ContextData,
+		})
+		if err != nil {
+			return nil, err
+		}
+		corpus.Context = string(contextJSON)
+	}
+	return corpus, nil
+}
+
 func (s *ASRV2Session) sendSessionFinish(ctx context.Context) error {
-	finishBody, err := json.Marshal(map[string]any{
-		"event": 2,
-		"reqid": s.reqID,
+	finishBody, err := json.Marshal(asrV2FinishPayload{
+		Event: 2,
+		ReqID: s.reqID,
 	})
 	if err != nil {
 		return wrapError(err, "marshal finish payload")
@@ -229,6 +354,11 @@ func (s *ASRV2Session) sendSessionFinish(ctx context.Context) error {
 		return err
 	}
 	return s.writeBinary(packet)
+}
+
+type asrV2FinishPayload struct {
+	Event int    `json:"event"`
+	ReqID string `json:"reqid"`
 }
 
 func (s *ASRV2Session) writeBinary(packet []byte) error {
@@ -450,11 +580,69 @@ func normalizeASRV2Config(cfg ASRV2Config) (ASRV2Config, error) {
 	if err := util.ValidateBits(resolvedBits(cfg)); err != nil {
 		return cfg, newAPIError(CodeParamError, err.Error())
 	}
-	if err := util.ValidateResultType(cfg.ResultType); err != nil {
+	if cfg.Codec != "" && cfg.Codec != ASRV2AudioCodecRaw && cfg.Codec != ASRV2AudioCodecOpus {
+		return cfg, newAPIError(CodeParamError, "codec must be raw or opus")
+	}
+	request := resolvedASRV2RequestConfig(cfg)
+	if err := util.ValidateResultType(request.ResultType); err != nil {
 		return cfg, newAPIError(CodeParamError, err.Error())
+	}
+	if request.AccelerateScore != nil && (*request.AccelerateScore < 0 || *request.AccelerateScore > 20) {
+		return cfg, newAPIError(CodeParamError, "accelerate_score must be between 0 and 20")
+	}
+	if request.VADSegmentDuration != nil && *request.VADSegmentDuration < 0 {
+		return cfg, newAPIError(CodeParamError, "vad_segment_duration must not be negative")
+	}
+	if request.EndWindowSize != nil && *request.EndWindowSize < 200 {
+		return cfg, newAPIError(CodeParamError, "end_window_size must be at least 200 milliseconds")
+	}
+	if request.ForceToSpeechTime != nil {
+		if *request.ForceToSpeechTime < 0 {
+			return cfg, newAPIError(CodeParamError, "force_to_speech_time must not be negative")
+		}
+		if request.EndWindowSize == nil {
+			return cfg, newAPIError(CodeParamError, "force_to_speech_time requires end_window_size")
+		}
+	}
+	if request.OutputZHVariant != "" && request.OutputZHVariant != "traditional" && request.OutputZHVariant != "tw" && request.OutputZHVariant != "hk" {
+		return cfg, newAPIError(CodeParamError, "output_zh_variant must be traditional, tw, or hk")
 	}
 
 	return cfg, nil
+}
+
+func resolvedASRV2UserConfig(cfg ASRV2Config, fallbackUID string) ASRV2UserConfig {
+	user := ASRV2UserConfig{}
+	if cfg.User != nil {
+		user = *cfg.User
+	}
+	if user.UID == "" {
+		user.UID = fallbackUID
+	}
+	return user
+}
+
+func resolvedASRV2RequestConfig(cfg ASRV2Config) ASRV2RequestConfig {
+	request := ASRV2RequestConfig{}
+	if cfg.Request != nil {
+		request = *cfg.Request
+	}
+	if request.EnableITN == nil && cfg.EnableITN {
+		value := true
+		request.EnableITN = &value
+	}
+	if request.EnablePunc == nil && cfg.EnablePunc {
+		value := true
+		request.EnablePunc = &value
+	}
+	if request.ResultType == "" {
+		request.ResultType = cfg.ResultType
+	}
+	if request.ShowUtterances == nil {
+		value := true
+		request.ShowUtterances = &value
+	}
+	return request
 }
 
 func normalizedResultType(rt string) string {

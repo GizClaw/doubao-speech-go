@@ -47,18 +47,38 @@ Typed SDK request fields:
 | `SampleRate` | `audio.rate` / SDK payload currently uses `sample_rate` | Defaults to `16000`. |
 | `Channel` / `Channels` | `audio.channel` | Defaults to `1`. |
 | `Bits` | `audio.bits` | Defaults to `16`. |
-| `Language` | `audio.language` | Only supported by `bigmodel_nostream` upstream; current SDK sends it in the request object for the implemented endpoint. |
+| `Language` | `audio.language` | Only supported by `bigmodel_nostream` upstream. |
+| `Codec` | `audio.codec` | `raw` or `opus`; omitted to use the service default. |
+| `User` | `user` | Typed UID, device, platform, SDK-version, and app-version metadata. |
 | `EnableITN` | `request.enable_itn` | Text inverse normalization. |
 | `EnablePunc` | `request.enable_punc` | Punctuation. |
 | `EnableDiarization` | SDK-specific request field | Current SDK sends `enable_diarization`; upstream document names speaker options differently. |
 | `SpeakerNum` | SDK-specific request field | Current SDK sends `speaker_num`. |
 | `Hotwords` | SDK-specific request field | Current SDK sends `hotwords`; upstream hotword configuration is under `request.corpus`. |
 | `ResultType` | `request.result_type` | `single` or `full`; SDK defaults to `single`. |
+| `Request` | `request` | Complete typed BigASR request configuration, including VAD, acceleration, detection, and corpus fields. |
 | `ResourceID` | `X-Api-Resource-Id` | Defaults through the client resource configuration. |
 
-Several upstream fields are documented below but are not yet typed by the SDK.
-Do not use arbitrary passthrough maps for them; add typed request fields when
-the SDK needs to support them.
+Every documented BigASR request parameter below is represented by
+`ASRV2RequestConfig`; the SDK does not expose an arbitrary request passthrough
+map. Optional scalar fields use pointers so callers can distinguish omission
+from an explicit `false` or `0`.
+
+For example, configure forced endpointing without using an untyped request map:
+
+```go
+endWindowSize := 800
+forceToSpeechTime := 0
+
+config := &doubaospeech.ASRV2Config{
+    Format:     doubaospeech.FormatPCM,
+    SampleRate: doubaospeech.SampleRate16000,
+    Request: &doubaospeech.ASRV2RequestConfig{
+        EndWindowSize:     &endWindowSize,
+        ForceToSpeechTime: &forceToSpeechTime,
+    },
+}
+```
 
 ## Authentication
 
@@ -148,11 +168,11 @@ Request fields:
 | Field | Level | Type | Required | SDK field | Notes |
 | --- | ---: | --- | --- | --- | --- |
 | `user` | 1 | object | no | client user ID | Helps server-side log filtering. |
-| `user.uid` | 2 | string | no | client user ID | Upstream recommends IMEI or MAC. |
-| `user.did` | 2 | string | no | not typed | Device name. |
-| `user.platform` | 2 | string | no | not typed | For example `iOS`, `Android`, `Linux`. |
-| `user.sdk_version` | 2 | string | no | not typed | SDK version. |
-| `user.app_version` | 2 | string | no | not typed | App version. |
+| `user.uid` | 2 | string | no | `User.UID` or client user ID | Upstream recommends IMEI or MAC. |
+| `user.did` | 2 | string | no | `User.DID` | Device name. |
+| `user.platform` | 2 | string | no | `User.Platform` | For example `iOS`, `Android`, `Linux`. |
+| `user.sdk_version` | 2 | string | no | `User.SDKVersion` | SDK version. |
+| `user.app_version` | 2 | string | no | `User.AppVersion` | App version. |
 | `audio` | 1 | object | yes | `ASRV2Config` audio fields | Audio metadata. |
 | `request` | 1 | object | yes | `ASRV2Config` request fields | Recognition parameters. |
 
@@ -162,7 +182,7 @@ Audio fields:
 | --- | --- | --- | --- | --- |
 | `language` | string | no | `Language` | Upstream says this is only supported by `bigmodel_nostream`; second-pass mode does not support it. Empty language supports Chinese/English and several dialects by default. |
 | `format` | string | yes | `Format` | `pcm`, `wav`, `ogg`, or `mp3`; PCM/WAV streams must be `pcm_s16le`. |
-| `codec` | string | no | not typed | `raw` or `opus`; default `raw`. For `ogg`, codec must be `opus`; for `mp3`, codec is ignored. |
+| `codec` | string | no | `Codec` | `raw` or `opus`; default `raw`. For `ogg`, codec must be `opus`; for `mp3`, codec is ignored. |
 | `rate` | int | no | `SampleRate` | Defaults to `16000`; upstream currently supports only `16000`. |
 | `bits` | int | no | `Bits` | Defaults to `16`; upstream currently supports only 16-bit. |
 | `channel` | int | no | `Channel` / `Channels` | `1` mono or `2` stereo; default `1`. |
@@ -201,31 +221,31 @@ Request fields:
 
 | Field | Type | SDK field | Notes |
 | --- | --- | --- | --- |
-| `model_name` | string | not typed | Upstream currently uses `bigmodel`; current SDK does not send this field explicitly. |
-| `enable_nonstream` | bool | not typed | Streaming plus non-streaming second-pass recognition; only supported by optimized bidirectional mode. Enables VAD segmentation and outputs `definite: true` only from nostream recognition. |
-| `enable_itn` | bool | `EnableITN` | Defaults to true upstream. Converts spoken text to written form, such as dates and currency. |
-| `enable_speaker_info` | bool | not typed | Speaker clustering; requires empty/default Chinese language or `zh-CN`. For async mode, `enable_nonstream` must be true. Requires `ssd_version="200"`. |
-| `ssd_version` | string | not typed | `200` enables big-model SSD. Recommended with ASR 2.0, not recommended with ASR 1.0. |
-| `enable_punc` | bool | `EnablePunc` | Defaults to true upstream. |
-| `enable_ddc` | bool | not typed | Semantic smoothing; removes or edits filler, repetition, and disfluent words. Defaults to false. |
-| `output_zh_variant` | string | not typed | `traditional`, `tw`, or `hk`. |
-| `enable_auto_lang` | bool | not typed | Only for `bigmodel_nostream`; automatically detects 25 supported languages. |
-| `show_utterances` | bool | SDK sends true | Enables utterance, pause, and word-level information. |
-| `show_speech_rate` | bool | not typed | Only `bigmodel_nostream` and async; puts `speech_rate` in utterance additions. |
-| `show_volume` | bool | not typed | Only `bigmodel_nostream` and async; puts `volume` in utterance additions. |
-| `enable_lid` | bool | not typed | Only `bigmodel_nostream` and async; language detection labels in additions. |
-| `enable_emotion_detection` | bool | not typed | Only `bigmodel_nostream` and async; emotion labels in additions. |
-| `enable_gender_detection` | bool | not typed | Only `bigmodel_nostream` and async; `male` / `female` labels in additions. |
-| `result_type` | string | `ResultType` | `full` for complete result, `single` for incremental result. |
-| `enable_accelerate_text` | bool | not typed | Accelerates first-character return with lower first-character accuracy. |
-| `accelerate_score` | int | not typed | Works with `enable_accelerate_text`; range `[0,20]`, higher means faster first character. |
-| `vad_segment_duration` | int | not typed | Semantic segmentation max silence threshold in ms; default `3000`; ignored when `end_window_size` is set. |
-| `end_window_size` | int | not typed | Forced endpointing time in ms; default `800`, minimum `200`; outputs `definite`. |
-| `force_to_speech_time` | int | not typed | Minimum audio duration before endpointing; requires `end_window_size`; recommended `1000`. |
-| `sensitive_words_filter` | string | not typed | Supports no-op, empty replacement, or `*` replacement. |
-| `enable_poi_fc` | bool | not typed | POI function call; supported by nostream and async with second-pass. |
-| `enable_music_fc` | bool | not typed | Music function call; supported by nostream and async with second-pass. |
-| `corpus` | object | not fully typed | Hotword, correction, and context settings. |
+| `model_name` | string | `Request.ModelName` | Upstream currently uses `bigmodel`. |
+| `enable_nonstream` | bool | `Request.EnableNonstream` | Streaming plus non-streaming second-pass recognition; only supported by optimized bidirectional mode. Enables VAD segmentation and outputs `definite: true` only from nostream recognition. |
+| `enable_itn` | bool | `Request.EnableITN` | Defaults to true upstream. Converts spoken text to written form, such as dates and currency. |
+| `enable_speaker_info` | bool | `Request.EnableSpeakerInfo` | Speaker clustering; requires empty/default Chinese language or `zh-CN`. For async mode, `enable_nonstream` must be true. Requires `ssd_version="200"`. |
+| `ssd_version` | string | `Request.SSDVersion` | `200` enables big-model SSD. Recommended with ASR 2.0, not recommended with ASR 1.0. |
+| `enable_punc` | bool | `Request.EnablePunc` | Defaults to true upstream. |
+| `enable_ddc` | bool | `Request.EnableDDC` | Semantic smoothing; removes or edits filler, repetition, and disfluent words. Defaults to false. |
+| `output_zh_variant` | string | `Request.OutputZHVariant` | `traditional`, `tw`, or `hk`. |
+| `enable_auto_lang` | bool | `Request.EnableAutoLanguage` | Only for `bigmodel_nostream`; automatically detects 25 supported languages. |
+| `show_utterances` | bool | `Request.ShowUtterances` | Enables utterance, pause, and word-level information; defaults to true in the SDK. |
+| `show_speech_rate` | bool | `Request.ShowSpeechRate` | Only for `bigmodel_nostream` and async; puts `speech_rate` in utterance additions. |
+| `show_volume` | bool | `Request.ShowVolume` | Only for `bigmodel_nostream` and async; puts `volume` in utterance additions. |
+| `enable_lid` | bool | `Request.EnableLanguageID` | Only for `bigmodel_nostream` and async; language detection labels in additions. |
+| `enable_emotion_detection` | bool | `Request.EnableEmotionDetection` | Only for `bigmodel_nostream` and async; emotion labels in additions. |
+| `enable_gender_detection` | bool | `Request.EnableGenderDetection` | Only for `bigmodel_nostream` and async; `male` / `female` labels in additions. |
+| `result_type` | string | `Request.ResultType` | `full` for complete result, `single` for incremental result. |
+| `enable_accelerate_text` | bool | `Request.EnableAccelerateText` | Accelerates first-character return with lower first-character accuracy. |
+| `accelerate_score` | int | `Request.AccelerateScore` | Works with `enable_accelerate_text`; range `[0,20]`, higher means faster first character. |
+| `vad_segment_duration` | int | `Request.VADSegmentDuration` | Semantic segmentation max silence threshold in ms; default `3000`; ignored when `end_window_size` is set. |
+| `end_window_size` | int | `Request.EndWindowSize` | Forced endpointing time in ms; default `800`, minimum `200`; outputs `definite`. |
+| `force_to_speech_time` | int | `Request.ForceToSpeechTime` | Minimum audio duration before endpointing; requires `end_window_size`; recommended `1000`. Use a pointer to send an explicit `0`. |
+| `sensitive_words_filter` | string | `Request.SensitiveWordsFilter` | Supports no-op, empty replacement, or `*` replacement. It is a pointer so an explicit empty string is preserved. |
+| `enable_poi_fc` | bool | `Request.EnablePOIFC` | POI function call; supported by nostream and async with second-pass. |
+| `enable_music_fc` | bool | `Request.EnableMusicFC` | Music function call; supported by nostream and async with second-pass. |
+| `corpus` | object | `Request.Corpus` | Typed hotword, correction, and context settings. |
 
 LID labels that can return recognition results:
 
@@ -289,11 +309,11 @@ Corpus fields:
 
 | Field | Type | SDK coverage | Notes |
 | --- | --- | --- | --- |
-| `boosting_table_name` | string | not typed | Hotword table name. |
-| `boosting_table_id` | string | not typed | Hotword table ID. |
-| `correct_table_name` | string | not typed | Replacement-word table name. |
-| `correct_table_id` | string | not typed | Replacement-word table ID. |
-| `context` | string | not typed | Hotwords or context JSON string. Direct hotwords have higher priority than tables. |
+| `boosting_table_name` | string | `Corpus.BoostingTableName` | Hotword table name. |
+| `boosting_table_id` | string | `Corpus.BoostingTableID` | Hotword table ID. |
+| `correct_table_name` | string | `Corpus.CorrectTableName` | Replacement-word table name. |
+| `correct_table_id` | string | `Corpus.CorrectTableID` | Replacement-word table ID. |
+| `context` | string | `Corpus.Context` | The SDK serializes typed hotwords, corrections, and dialogue context to the JSON string required upstream. Direct hotwords have higher priority than tables. |
 
 `corpus.context` supports direct hotwords:
 
