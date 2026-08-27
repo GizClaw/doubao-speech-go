@@ -149,16 +149,21 @@ func receiveASRFinals(session *doubaospeech.ASRV2Session, finals chan<- asrFinal
 			}
 			return
 		}
-		if result == nil || !result.IsFinal {
+		if result == nil {
 			continue
 		}
 		text := strings.TrimSpace(result.Text)
-		if text == "" {
-			for _, utterance := range result.Utterances {
-				if utterance.Definite && strings.TrimSpace(utterance.Text) != "" {
+		definite := false
+		for _, utterance := range result.Utterances {
+			if utterance.Definite {
+				definite = true
+				if text == "" && strings.TrimSpace(utterance.Text) != "" {
 					text = strings.TrimSpace(utterance.Text)
 				}
 			}
+		}
+		if !definite || text == "" {
+			continue
 		}
 		finals <- asrFinal{text: text, receivedAt: time.Now()}
 	}
