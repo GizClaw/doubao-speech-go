@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -348,10 +349,5 @@ func normalizePodcastRequest(request *PodcastRequest) (PodcastRequest, error) {
 }
 
 func podcastSpeakerSliceContains(values []PodcastSpeakerID, target PodcastSpeakerID) bool {
-	for _, value := range values {
-		if value == target {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(values, target)
 }

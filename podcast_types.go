@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"slices"
 )
 
 // PodcastAction selects how the service creates the podcast script.
@@ -159,10 +160,8 @@ func (a PodcastSpeakerAdditions) MarshalJSON() ([]byte, error) {
 		if addition.Model == "" {
 			return nil, fmt.Errorf("podcast speaker addition %d has an empty model", index)
 		}
-		for _, seenSpeaker := range seenSpeakers {
-			if seenSpeaker == addition.Speaker {
-				return nil, fmt.Errorf("podcast speaker addition %q is duplicated", addition.Speaker)
-			}
+		if slices.Contains(seenSpeakers, addition.Speaker) {
+			return nil, fmt.Errorf("podcast speaker addition %q is duplicated", addition.Speaker)
 		}
 		seenSpeakers = append(seenSpeakers, addition.Speaker)
 		if index > 0 {

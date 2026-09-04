@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -52,10 +53,8 @@ func TestPodcastPublicRequestTypesContainNoDynamicJSON(t *testing.T) {
 		for valueType.Kind() == reflect.Pointer || valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Array {
 			valueType = valueType.Elem()
 		}
-		for _, seenType := range visited {
-			if seenType == valueType {
-				return
-			}
+		if slices.Contains(visited, valueType) {
+			return
 		}
 		visited = append(visited, valueType)
 		if valueType == jsonRawMessageType {
@@ -67,8 +66,7 @@ func TestPodcastPublicRequestTypesContainNoDynamicJSON(t *testing.T) {
 		if valueType.Kind() != reflect.Struct {
 			return
 		}
-		for index := 0; index < valueType.NumField(); index++ {
-			field := valueType.Field(index)
+		for field := range valueType.Fields() {
 			inspect(field.Type, path+"."+field.Name)
 		}
 	}
