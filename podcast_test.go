@@ -18,7 +18,7 @@ func TestPodcastOpenSessionAndReceiveRounds(t *testing.T) {
 	service.dialer = dialer
 
 	conn.enqueue(websocket.BinaryMessage, podcastServerEvent(t, protocol.MessageTypeFullServer, protocol.EventConnectionStarted, "", []byte(`{}`)))
-	conn.enqueue(websocket.BinaryMessage, podcastServerEvent(t, protocol.MessageTypeFullServer, podcastSessionStartedEvent, "session-test", []byte(`{}`)))
+	conn.enqueue(websocket.BinaryMessage, podcastServerEvent(t, protocol.MessageTypeFullServer, podcastSessionStartedEvent, "session-test", []byte(`{"task_id":"server-task"}`)))
 
 	head := true
 	session, err := service.OpenSession(context.Background(), &PodcastRequest{
@@ -31,6 +31,9 @@ func TestPodcastOpenSessionAndReceiveRounds(t *testing.T) {
 		t.Fatalf("OpenSession error = %v", err)
 	}
 	defer session.Close()
+	if got := session.TaskID(); got != "server-task" {
+		t.Fatalf("TaskID = %q, want server-task", got)
+	}
 
 	if got := dialer.headers.Get("X-Api-App-Id"); got != "app-test" {
 		t.Fatalf("X-Api-App-Id = %q, want app-test", got)
@@ -129,6 +132,51 @@ func TestPodcastRequiresAccessKeyBeforeDial(t *testing.T) {
 	if !ok || !apiErr.IsAuthError() {
 		t.Fatalf("error = %T %v, want auth Error", err, err)
 	}
+}
+
+func TestPodcastAcceptsAPIKeyAuthentication(t *testing.T) {
+	client := NewClient("", WithAPIKey("api-key-test"))
+	conn := newFakeWSConn()
+	dialer := &fakeDialer{conn: conn}
+	service := newPodcastService(client)
+	service.dialer = dialer
+	conn.enqueue(websocket.BinaryMessage, podcastServerEvent(t, protocol.MessageTypeFullServer, protocol.EventConnectionStarted, "", []byte(`{}`)))
+	conn.enqueue(websocket.BinaryMessage, podcastServerEvent(t, protocol.MessageTypeFullServer, podcastSessionStartedEvent, "session-test", []byte(`{}`)))
+	session, err := service.OpenSession(context.Background(), &PodcastRequest{SessionID: "session-test", InputID: "input", PromptText: "prompt"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+	if got := dialer.headers.Get("X-Api-Key"); got != "api-key-test" {
+		t.Fatalf("X-Api-Key = %q, want api-key-test", got)
+	}
+	if got := dialer.headers.Get("X-Api-Access-Key"); got != "" {
+		t.Fatalf("X-Api-Access-Key = %q, want empty", got)
+	}
+}
+
+func TestPodcastWriteHonorsCanceledContext(t *testing.T) {
+	conn := &blockingWriteWSConn{fakeWSConn: newFakeWSConn(), started: make(chan struct{})}
+	session := &PodcastSession{conn: conn, sessionID: "session", taskID: "task"}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- session.writeEvent(ctx, podcastStartSessionEvent, "session", []byte(`{}`)) }()
+	<-conn.started
+	cancel()
+	if err := <-done; err != context.Canceled {
+		t.Fatalf("write error = %v, want context.Canceled", err)
+	}
+}
+
+type blockingWriteWSConn struct {
+	*fakeWSConn
+	started chan struct{}
+}
+
+func (c *blockingWriteWSConn) WriteMessage(_ int, _ []byte) error {
+	close(c.started)
+	<-c.reads
+	return nil
 }
 
 func podcastServerEvent(t *testing.T, messageType protocol.MessageType, event int32, sessionID string, payload []byte) []byte {

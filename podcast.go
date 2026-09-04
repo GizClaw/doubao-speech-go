@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/GizClaw/doubao-speech-go/internal/protocol"
 	"github.com/GizClaw/doubao-speech-go/internal/transport"
@@ -23,6 +24,7 @@ const (
 	podcastSessionStartedEvent  int32 = 150
 	podcastSessionFinishedEvent int32 = 152
 	podcastSessionFailedEvent   int32 = 153
+	podcastCloseTimeout               = 2 * time.Second
 )
 
 // PodcastService provides streamed podcast generation.
@@ -44,18 +46,20 @@ func (s *PodcastService) OpenSession(ctx context.Context, request *PodcastReques
 	if err != nil {
 		return nil, err
 	}
-	if strings.TrimSpace(s.client.config.accessKey) == "" {
-		return nil, newAPIError(CodeAuthError, "podcast access key is empty")
-	}
-	if strings.TrimSpace(s.client.config.appID) == "" {
-		return nil, newAPIError(CodeAuthError, "podcast app id is empty")
+	if strings.TrimSpace(s.client.config.apiKey) == "" && strings.TrimSpace(s.client.config.accessKey) == "" {
+		return nil, newAPIError(CodeAuthError, "podcast API key and access key are both empty")
 	}
 
 	connectID := util.NewReqID("podcast")
 	headers := http.Header{}
-	headers.Set("X-Api-App-Id", s.client.config.appID)
-	headers.Set("X-Api-App-Key", firstNonEmpty(s.client.config.appKey, podcastDefaultAppKey))
-	headers.Set("X-Api-Access-Key", s.client.config.accessKey)
+	if s.client.config.apiKey != "" {
+		headers.Set("X-Api-Key", s.client.config.apiKey)
+	}
+	if s.client.config.accessKey != "" {
+		headers.Set("X-Api-App-Id", s.client.config.appID)
+		headers.Set("X-Api-App-Key", firstNonEmpty(s.client.config.appKey, podcastDefaultAppKey))
+		headers.Set("X-Api-Access-Key", s.client.config.accessKey)
+	}
 	headers.Set("X-Api-Resource-Id", s.client.resolveResourceID("", ResourcePodcast))
 	headers.Set("X-Api-Connect-Id", connectID)
 
@@ -82,10 +86,12 @@ func (s *PodcastService) OpenSession(ctx context.Context, request *PodcastReques
 		_ = session.Close()
 		return nil, wrapError(err, "send podcast start session")
 	}
-	if _, err := session.expectEvent(ctx, podcastSessionStartedEvent); err != nil {
+	started, err := session.expectEvent(ctx, podcastSessionStartedEvent)
+	if err != nil {
 		_ = session.Close()
 		return nil, wrapError(err, "read podcast start response")
 	}
+	session.taskID = podcastTaskID(started.Payload, normalized.SessionID)
 	if err := session.writeEvent(ctx, podcastFinishSessionEvent, normalized.SessionID, []byte("{}")); err != nil {
 		_ = session.Close()
 		return nil, wrapError(err, "send podcast finish input")
@@ -97,6 +103,7 @@ func (s *PodcastService) OpenSession(ctx context.Context, request *PodcastReques
 type PodcastSession struct {
 	conn      transport.WSConn
 	sessionID string
+	taskID    string
 	connectID string
 	writeMu   sync.Mutex
 	closeOnce sync.Once
@@ -104,7 +111,7 @@ type PodcastSession struct {
 }
 
 // TaskID returns the identifier to use in PodcastRetryInfo after interruption.
-func (s *PodcastSession) TaskID() string { return s.sessionID }
+func (s *PodcastSession) TaskID() string { return s.taskID }
 
 // RecvEvent reads the next podcast event. PodcastEventSessionFinished marks a
 // successful terminal event.
@@ -153,7 +160,9 @@ func (s *PodcastSession) RecvEvent(ctx context.Context) (*PodcastEvent, error) {
 // Close finishes the connection and releases the websocket.
 func (s *PodcastSession) Close() error {
 	s.closeOnce.Do(func() {
-		finishErr := s.writeEvent(context.Background(), protocol.EventFinishConnection, "", []byte("{}"))
+		ctx, cancel := context.WithTimeout(context.Background(), podcastCloseTimeout)
+		defer cancel()
+		finishErr := s.writeEvent(ctx, protocol.EventFinishConnection, "", []byte("{}"))
 		s.closeErr = errors.Join(finishErr, s.conn.Close())
 	})
 	return s.closeErr
@@ -191,7 +200,41 @@ func (s *PodcastSession) writeEvent(ctx context.Context, event int32, sessionID 
 	}
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
-	return s.conn.WriteMessage(websocket.BinaryMessage, packet)
+	return writeWSMessageWithContext(ctx, s.conn, websocket.BinaryMessage, packet)
+}
+
+func writeWSMessageWithContext(ctx context.Context, conn transport.WSConn, messageType int, payload []byte) error {
+	if ctx == nil {
+		return conn.WriteMessage(messageType, payload)
+	}
+	result := make(chan error, 1)
+	go func() { result <- conn.WriteMessage(messageType, payload) }()
+	select {
+	case err := <-result:
+		return err
+	case <-ctx.Done():
+		_ = conn.Close()
+		return ctx.Err()
+	}
+}
+
+func podcastTaskID(payload []byte, fallback string) string {
+	var response struct {
+		TaskID    string `json:"task_id"`
+		SessionID string `json:"session_id"`
+		Data      *struct {
+			TaskID    string `json:"task_id"`
+			SessionID string `json:"session_id"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(payload, &response); err != nil {
+		return fallback
+	}
+	values := []string{response.TaskID, response.SessionID}
+	if response.Data != nil {
+		values = append(values, response.Data.TaskID, response.Data.SessionID)
+	}
+	return firstNonEmpty(append(values, fallback)...)
 }
 
 func normalizePodcastRequest(request *PodcastRequest) (PodcastRequest, error) {

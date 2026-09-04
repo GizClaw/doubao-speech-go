@@ -7,7 +7,7 @@ round and resume an interrupted task with `PodcastRetryInfo`.
 ```go
 client := doubaospeech.NewClient(
     appID,
-    doubaospeech.WithAccessKey(accessKey),
+    doubaospeech.WithAPIKey(apiKey),
 )
 
 session, err := client.Podcast.OpenSession(ctx, &doubaospeech.PodcastRequest{
@@ -37,9 +37,10 @@ for {
 }
 ```
 
-Authentication headers are configured with `WithAccessKey` and, when needed,
-`WithAppKey`. When `WithAppKey` is omitted, the service uses the standard
-Podcast app-key value. `WithResourceID` can override `ResourcePodcast`.
+Current authentication uses `WithAPIKey`. Legacy accounts can instead configure
+`WithAccessKey` and, when needed, `WithAppKey`; when the app key is omitted, the
+service uses the standard Podcast app-key value. `WithResourceID` can override
+`ResourcePodcast`.
 
 After an interrupted run, open a new session and provide the original task ID
 plus the last atomically persisted round:

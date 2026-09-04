@@ -20,9 +20,9 @@ Go SDK for Doubao/Volc speech APIs.
 
 ## Public API Surface
 
-Create a client with an App ID config value and API-key authentication. Most
-services use `WithAPIKey`; Podcast uses its API-specific app-key/access-key
-pair through `WithAppKey` and `WithAccessKey`.
+Create a client with an App ID config value and API-key authentication. Podcast
+supports the current `WithAPIKey` flow and the legacy app-key/access-key pair
+through `WithAppKey` and `WithAccessKey`.
 
 ```go
 client := doubaospeech.NewClient(appID, doubaospeech.WithAPIKey(apiKey))
