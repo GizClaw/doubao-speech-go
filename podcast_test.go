@@ -4,11 +4,110 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/GizClaw/doubao-speech-go/internal/protocol"
 	"github.com/gorilla/websocket"
 )
+
+func TestPodcastSpeakerInfoMarshalsTypedAdditions(t *testing.T) {
+	request := PodcastRequest{
+		InputID:    "input-test",
+		PromptText: "Discuss the moon",
+		SpeakerInfo: &PodcastSpeakerInfo{
+			Speakers: []PodcastSpeakerID{
+				"zh_female_mizaitongxue_v2_saturn_bigtts",
+				"S_clone_test",
+			},
+			SpeakerAdditions: PodcastSpeakerAdditions{
+				{
+					Speaker: "S_clone_test",
+					Model:   PodcastSpeakerModelSeedTTS20Standard,
+				},
+			},
+		},
+	}
+
+	normalized, err := normalizePodcastRequest(&request)
+	if err != nil {
+		t.Fatalf("normalizePodcastRequest error = %v", err)
+	}
+	payload, err := json.Marshal(normalized)
+	if err != nil {
+		t.Fatalf("json.Marshal error = %v", err)
+	}
+	want := `"speaker_additions":{"S_clone_test":"{\"model\":\"seed-tts-2.0-standard\"}"}`
+	if !bytes.Contains(payload, []byte(want)) {
+		t.Fatalf("payload = %s, want typed speaker additions %s", payload, want)
+	}
+}
+
+func TestPodcastPublicRequestTypesContainNoDynamicJSON(t *testing.T) {
+	jsonRawMessageType := reflect.TypeFor[json.RawMessage]()
+	var visited []reflect.Type
+	var inspect func(reflect.Type, string)
+	inspect = func(valueType reflect.Type, path string) {
+		for valueType.Kind() == reflect.Pointer || valueType.Kind() == reflect.Slice || valueType.Kind() == reflect.Array {
+			valueType = valueType.Elem()
+		}
+		for _, seenType := range visited {
+			if seenType == valueType {
+				return
+			}
+		}
+		visited = append(visited, valueType)
+		if valueType == jsonRawMessageType {
+			t.Fatalf("%s exposes dynamic JSON type %s", path, valueType)
+		}
+		if valueType.Kind() == reflect.Map || valueType.Kind() == reflect.Interface {
+			t.Fatalf("%s exposes dynamic type %s", path, valueType)
+		}
+		if valueType.Kind() != reflect.Struct {
+			return
+		}
+		for index := 0; index < valueType.NumField(); index++ {
+			field := valueType.Field(index)
+			inspect(field.Type, path+"."+field.Name)
+		}
+	}
+
+	inspect(reflect.TypeFor[PodcastRequest](), "PodcastRequest")
+}
+
+func TestPodcastSpeakerValidation(t *testing.T) {
+	tests := []struct {
+		name      string
+		speakers  []PodcastSpeakerID
+		additions PodcastSpeakerAdditions
+		want      string
+	}{
+		{name: "one speaker", speakers: []PodcastSpeakerID{"speaker-a"}, want: "exactly two"},
+		{name: "duplicate speakers", speakers: []PodcastSpeakerID{"speaker-a", "speaker-a"}, want: "duplicate speaker"},
+		{
+			name:     "addition for unselected speaker",
+			speakers: []PodcastSpeakerID{"speaker-a", "speaker-b"},
+			additions: PodcastSpeakerAdditions{
+				{Speaker: "speaker-c", Model: PodcastSpeakerModelSeedTTS20Standard},
+			},
+			want: "not present in speakers",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := normalizePodcastRequest(&PodcastRequest{
+				InputID:     "input",
+				PromptText:  "prompt",
+				SpeakerInfo: &PodcastSpeakerInfo{Speakers: test.speakers, SpeakerAdditions: test.additions},
+			})
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v, want containing %q", err, test.want)
+			}
+		})
+	}
+}
 
 func TestPodcastOpenSessionAndReceiveRounds(t *testing.T) {
 	client := NewClient("app-test", WithAccessKey("access-test"))

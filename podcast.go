@@ -249,18 +249,55 @@ func normalizePodcastRequest(request *PodcastRequest) (PodcastRequest, error) {
 	normalized.InputID = strings.TrimSpace(normalized.InputID)
 	normalized.PromptText = strings.TrimSpace(normalized.PromptText)
 	normalized.InputText = strings.TrimSpace(normalized.InputText)
+	if normalized.InputInfo != nil {
+		inputInfo := *normalized.InputInfo
+		inputInfo.InputURL = strings.TrimSpace(inputInfo.InputURL)
+		normalized.InputInfo = &inputInfo
+	}
+	if len(normalized.NLPTexts) > 0 {
+		normalized.NLPTexts = append([]PodcastScriptLine(nil), normalized.NLPTexts...)
+		for index := range normalized.NLPTexts {
+			normalized.NLPTexts[index].Speaker = PodcastSpeakerID(strings.TrimSpace(string(normalized.NLPTexts[index].Speaker)))
+			normalized.NLPTexts[index].Text = strings.TrimSpace(normalized.NLPTexts[index].Text)
+			if normalized.NLPTexts[index].Speaker == "" || normalized.NLPTexts[index].Text == "" {
+				return PodcastRequest{}, newAPIError(CodeParamError, fmt.Sprintf("podcast nlp_texts[%d] requires speaker and text", index))
+			}
+		}
+	}
 	if normalized.InputID == "" {
 		return PodcastRequest{}, newAPIError(CodeParamError, "podcast input_id is empty")
 	}
-	if normalized.PromptText == "" && normalized.InputText == "" {
-		return PodcastRequest{}, newAPIError(CodeParamError, "podcast prompt_text and input_text are both empty")
+	inputURL := ""
+	if normalized.InputInfo != nil {
+		inputURL = normalized.InputInfo.InputURL
+	}
+	if normalized.PromptText == "" && normalized.InputText == "" && inputURL == "" && len(normalized.NLPTexts) == 0 {
+		return PodcastRequest{}, newAPIError(CodeParamError, "podcast prompt_text, input_text, input_url, and nlp_texts are all empty")
 	}
 	if normalized.Action == nil {
-		action := 4
-		if normalized.InputText != "" {
-			action = 0
+		action := PodcastActionFromPrompt
+		if len(normalized.NLPTexts) > 0 {
+			action = PodcastActionFromScript
+		} else if normalized.InputText != "" || inputURL != "" {
+			action = PodcastActionFromSource
 		}
 		normalized.Action = &action
+	}
+	switch *normalized.Action {
+	case PodcastActionFromSource:
+		if normalized.InputText == "" && inputURL == "" {
+			return PodcastRequest{}, newAPIError(CodeParamError, "podcast source action requires input_text or input_url")
+		}
+	case PodcastActionFromScript:
+		if len(normalized.NLPTexts) == 0 {
+			return PodcastRequest{}, newAPIError(CodeParamError, "podcast script action requires nlp_texts")
+		}
+	case PodcastActionFromPrompt:
+		if normalized.PromptText == "" {
+			return PodcastRequest{}, newAPIError(CodeParamError, "podcast prompt action requires prompt_text")
+		}
+	default:
+		return PodcastRequest{}, newAPIError(CodeParamError, fmt.Sprintf("unsupported podcast action: %d", *normalized.Action))
 	}
 	if normalized.InputInfo == nil {
 		normalized.InputInfo = &PodcastInputInfo{}
@@ -268,5 +305,53 @@ func normalizePodcastRequest(request *PodcastRequest) (PodcastRequest, error) {
 	if normalized.AudioConfig == nil {
 		normalized.AudioConfig = &PodcastAudioConfig{Format: FormatMP3, SampleRate: SampleRate24000}
 	}
+	if normalized.SpeakerInfo != nil {
+		speakerInfo := *normalized.SpeakerInfo
+		speakerInfo.Speakers = append([]PodcastSpeakerID(nil), normalized.SpeakerInfo.Speakers...)
+		speakerInfo.SpeakerAdditions = append(PodcastSpeakerAdditions(nil), normalized.SpeakerInfo.SpeakerAdditions...)
+		if len(speakerInfo.Speakers) != 0 && len(speakerInfo.Speakers) != 2 {
+			return PodcastRequest{}, newAPIError(CodeParamError, "podcast speaker_info.speakers must contain exactly two speakers")
+		}
+		knownSpeakers := make([]PodcastSpeakerID, 0, len(speakerInfo.Speakers))
+		for index := range speakerInfo.Speakers {
+			speakerInfo.Speakers[index] = PodcastSpeakerID(strings.TrimSpace(string(speakerInfo.Speakers[index])))
+			if speakerInfo.Speakers[index] == "" {
+				return PodcastRequest{}, newAPIError(CodeParamError, fmt.Sprintf("podcast speaker_info.speakers[%d] is empty", index))
+			}
+			if podcastSpeakerSliceContains(knownSpeakers, speakerInfo.Speakers[index]) {
+				return PodcastRequest{}, newAPIError(CodeParamError, "podcast speaker_info.speakers contains a duplicate speaker")
+			}
+			knownSpeakers = append(knownSpeakers, speakerInfo.Speakers[index])
+		}
+		additionSpeakers := make([]PodcastSpeakerID, 0, len(speakerInfo.SpeakerAdditions))
+		for index := range speakerInfo.SpeakerAdditions {
+			addition := &speakerInfo.SpeakerAdditions[index]
+			addition.Speaker = PodcastSpeakerID(strings.TrimSpace(string(addition.Speaker)))
+			addition.Model = PodcastSpeakerModel(strings.TrimSpace(string(addition.Model)))
+			if addition.Speaker == "" {
+				return PodcastRequest{}, newAPIError(CodeParamError, fmt.Sprintf("podcast speaker_info.speaker_additions[%d].speaker is empty", index))
+			}
+			if addition.Model == "" {
+				return PodcastRequest{}, newAPIError(CodeParamError, fmt.Sprintf("podcast speaker_info.speaker_additions[%d].model is empty", index))
+			}
+			if !podcastSpeakerSliceContains(knownSpeakers, addition.Speaker) {
+				return PodcastRequest{}, newAPIError(CodeParamError, fmt.Sprintf("podcast speaker addition %q is not present in speakers", addition.Speaker))
+			}
+			if podcastSpeakerSliceContains(additionSpeakers, addition.Speaker) {
+				return PodcastRequest{}, newAPIError(CodeParamError, fmt.Sprintf("podcast speaker addition %q is duplicated", addition.Speaker))
+			}
+			additionSpeakers = append(additionSpeakers, addition.Speaker)
+		}
+		normalized.SpeakerInfo = &speakerInfo
+	}
 	return normalized, nil
+}
+
+func podcastSpeakerSliceContains(values []PodcastSpeakerID, target PodcastSpeakerID) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
 }
