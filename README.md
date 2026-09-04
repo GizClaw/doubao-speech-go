@@ -16,12 +16,13 @@ Go SDK for Doubao/Volc speech APIs.
 - AST V2 realtime translation
 - Voice clone upload + polling workflow
 - Audio Generation HTTP API
+- Podcast generation WebSocket API with per-round events and retry checkpoints
 
 ## Public API Surface
 
-Create a client with an App ID config value and API-key authentication. The
-API key is the only authentication factor; App ID is request/application
-configuration used by services that still require it.
+Create a client with an App ID config value and API-key authentication. Podcast
+supports the current `WithAPIKey` flow and the legacy app-key/access-key pair
+through `WithAppKey` and `WithAccessKey`.
 
 ```go
 client := doubaospeech.NewClient(appID, doubaospeech.WithAPIKey(apiKey))
@@ -37,6 +38,7 @@ Available service fields:
 | `client.RealtimeDuplex` | Realtime full-duplex dialogue |
 | `client.ASTTranslate` | AST simultaneous interpretation |
 | `client.AudioGeneration` | Audio Generation HTTP API |
+| `client.Podcast` | Podcast generation WebSocket API |
 | `client.VoiceClone` | Voice clone upload, status, and activation |
 
 ## Roadmap
@@ -57,6 +59,7 @@ status by interface:
 | 🟢 | Realtime full-duplex 3.0 | [Realtime duplex](docs/realtime_duplex.md) | `client.RealtimeDuplex.OpenSession` | JSON event flow, typed `extension.asr`/`extension.tts`/`extension.dialog`, audio append/commit, replacement text, context CRUD, response cancel, function-call result return, and parsed events are implemented. |
 | 🟢 | AST simultaneous interpretation | [Simultaneous interpretation](docs/simultaneous_interpretation.md) | `client.ASTTranslate.OpenSession` | Supports S2T/S2S start, audio upload, config update, finish, parsed subtitle/TTS/usage/muted events, and protobuf transport. |
 | 🟢 | Audio generation | [Audio generation](docs/audio_generation.md) | `client.AudioGeneration.Create` | Supports text prompts, audio/image/speaker references, audio config, watermark config, decoded audio, and temporary URL response fields. |
+| 🟢 | Podcast generation | [Podcast generation](docs/podcast.md) | `client.Podcast.OpenSession` | Streams typed round/audio/completion events and accepts `retry_info` for durable per-round resume. |
 | 🟢 | Voice clone v1 workflow | [Voice clone](docs/voice_clone.md) | `client.VoiceClone.Upload`, `GetStatus`, `Activate` | Supports training upload, status polling, and activation. |
 | ⚪ | Voice clone v3 | [Voice clone](docs/voice_clone.md) | none | Needs a typed client for `speaker_id`, `custom_speaker_id`, `audio`, `extra_params`, `speaker_status`, `model_type`, and demo-audio response fields. |
 
@@ -133,6 +136,7 @@ go test . -run TestVoiceCloneUploadAndWaitSuccess -count=1 -v
 - `docs/tts_v2.md`
 - `docs/voice_clone.md`
 - `docs/audio_generation.md`
+- `docs/podcast.md`
 
 ## License
 
