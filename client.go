@@ -56,6 +56,9 @@ type Client struct {
 	// Audio generation.
 	AudioGeneration *AudioGenerationService
 
+	// Podcast generation.
+	Podcast *PodcastService
+
 	// TTS V2 WebSocket synthesis.
 	TTSV2 *TTSServiceV2
 
@@ -65,6 +68,9 @@ type Client struct {
 type clientConfig struct {
 	appID  string
 	apiKey string
+	// Podcast currently uses the legacy app-key/access-key header pair.
+	appKey    string
+	accessKey string
 
 	cluster    string
 	resourceID string
@@ -107,6 +113,7 @@ func NewClient(appID string, opts ...Option) *Client {
 	c.RealtimeDuplex = newRealtimeDuplexService(c)
 	c.ASTTranslate = newASTTranslateService(c)
 	c.AudioGeneration = newAudioGenerationService(c)
+	c.Podcast = newPodcastService(c)
 	c.TTSV2 = ttsV2
 
 	return c
@@ -116,6 +123,20 @@ func NewClient(appID string, opts ...Option) *Client {
 func WithAPIKey(apiKey string) Option {
 	return func(c *clientConfig) {
 		c.apiKey = apiKey
+	}
+}
+
+// WithAppKey sets the X-Api-App-Key value used by services such as Podcast.
+func WithAppKey(appKey string) Option {
+	return func(c *clientConfig) {
+		c.appKey = appKey
+	}
+}
+
+// WithAccessKey sets the X-Api-Access-Key value used by services such as Podcast.
+func WithAccessKey(accessKey string) Option {
+	return func(c *clientConfig) {
+		c.accessKey = accessKey
 	}
 }
 
