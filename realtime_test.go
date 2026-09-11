@@ -335,6 +335,7 @@ func TestRealtimeStartPayloadFullWireContract(t *testing.T) {
 			EnableLoudnessNorm:           new(true),
 			EnableConversationTruncate:   new(true),
 			EnableUserQueryExit:          new(false),
+			OutputModalities:             []RealtimeOutputModality{RealtimeOutputModalityText, RealtimeOutputModalityAudio},
 		},
 	}
 	cfg.Prompt = RealtimePromptConfig{System: "compat prompt", Variables: map[string]string{"name": "豆包"}}
@@ -400,6 +401,7 @@ func TestRealtimeStartPayloadFullWireContract(t *testing.T) {
 				"enable_loudness_norm":true,
 				"enable_conversation_truncate":true,
 				"enable_user_query_exit":false,
+				"output_modalities":["text","audio"],
 				"input_mod":"push_to_talk",
 				"model":"1.2.1.1"
 			}
@@ -408,6 +410,156 @@ func TestRealtimeStartPayloadFullWireContract(t *testing.T) {
 		"props":{"temperature":0.3,"top_p":0.7,"max_tokens":64,"presence_penalty":0.1,"frequency_penalty":0.2},
 		"history":[{"role":"assistant","content":"previous"}]
 	}`)
+}
+
+func TestRealtimeStartPayloadOutputModalitiesWireContract(t *testing.T) {
+	tests := []struct {
+		name  string
+		extra *RealtimeDialogExtra
+		want  string
+	}{
+		{
+			name: "unset",
+			want: `{"input_mod":"text","model":"1.2.1.1"}`,
+		},
+		{
+			name:  "unset with other extra fields",
+			extra: &RealtimeDialogExtra{StrictAudit: new(false)},
+			want:  `{"strict_audit":false,"input_mod":"text","model":"1.2.1.1"}`,
+		},
+		{
+			name:  "text only",
+			extra: &RealtimeDialogExtra{OutputModalities: []RealtimeOutputModality{RealtimeOutputModalityText}},
+			want:  `{"output_modalities":["text"],"input_mod":"text","model":"1.2.1.1"}`,
+		},
+		{
+			name: "text and audio",
+			extra: &RealtimeDialogExtra{OutputModalities: []RealtimeOutputModality{
+				RealtimeOutputModalityText,
+				RealtimeOutputModalityAudio,
+			}},
+			want: `{"output_modalities":["text","audio"],"input_mod":"text","model":"1.2.1.1"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := DefaultRealtimeConfig()
+			cfg.TTS.Speaker = realtimeTestSpeaker
+			cfg.Model = RealtimeModelO20
+			cfg.InputMode = RealtimeInputModeText
+			cfg.Dialog.Extra = tt.extra
+
+			normalized, err := normalizeRealtimeConfig(&cfg)
+			if err != nil {
+				t.Fatalf("normalizeRealtimeConfig error = %v", err)
+			}
+			payload, err := buildRealtimeStartPayload(normalized)
+			if err != nil {
+				t.Fatalf("buildRealtimeStartPayload error = %v", err)
+			}
+			assertJSONContract(t, payload, `{
+				"asr":{"language":"zh-CN"},
+				"tts":{"speaker":"test-speaker","audio_config":{"channel":1,"format":"pcm_s16le","sample_rate":24000,"bits":16}},
+				"dialog":{"extra":`+tt.want+`}
+			}`)
+		})
+	}
+}
+
+func TestRealtimeOutputModalitiesValidation(t *testing.T) {
+	tests := []struct {
+		name       string
+		modalities []RealtimeOutputModality
+		want       string
+	}{
+		{name: "nil", modalities: nil},
+		{name: "text", modalities: []RealtimeOutputModality{RealtimeOutputModalityText}},
+		{name: "audio", modalities: []RealtimeOutputModality{RealtimeOutputModalityAudio}},
+		{name: "audio and text", modalities: []RealtimeOutputModality{RealtimeOutputModalityAudio, RealtimeOutputModalityText}},
+		{name: "empty", modalities: []RealtimeOutputModality{}, want: "output_modalities must not be empty"},
+		{name: "blank entry", modalities: []RealtimeOutputModality{""}, want: "output_modalities must contain only [text,audio]"},
+		{name: "unknown", modalities: []RealtimeOutputModality{"video"}, want: "output_modalities must contain only [text,audio]: video"},
+		{name: "wrong case", modalities: []RealtimeOutputModality{"Text"}, want: "output_modalities must contain only [text,audio]: Text"},
+		{name: "duplicate", modalities: []RealtimeOutputModality{RealtimeOutputModalityText, RealtimeOutputModalityText}, want: "output_modalities contains duplicate text"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, model := range []RealtimeModelVersion{RealtimeModelO20, RealtimeModelSC20} {
+				cfg := DefaultRealtimeConfig()
+				cfg.TTS.Speaker = realtimeTestSpeaker
+				cfg.Model = model
+				cfg.Dialog.Extra = &RealtimeDialogExtra{OutputModalities: tt.modalities}
+
+				_, err := normalizeRealtimeConfig(&cfg)
+				if tt.want == "" {
+					if err != nil {
+						t.Fatalf("model %s: normalizeRealtimeConfig error = %v, want nil", model, err)
+					}
+					continue
+				}
+				if err == nil {
+					t.Fatalf("model %s: normalizeRealtimeConfig error = nil, want containing %q", model, tt.want)
+				}
+				if !strings.Contains(err.Error(), tt.want) {
+					t.Fatalf("model %s: error = %v, want containing %q", model, err, tt.want)
+				}
+				if apiErr, ok := AsError(err); !ok || apiErr.Code != CodeParamError {
+					t.Fatalf("model %s: error = %#v, want *Error with code %d", model, err, CodeParamError)
+				}
+			}
+		})
+	}
+}
+
+// TestRealtimeTextOnlyTurnEndsAtChatEnded replays the event sequence the live
+// service sends for output_modalities=["text"] (no TTS events at all) and
+// checks that ChatEnded closes each text turn.
+func TestRealtimeTextOnlyTurnEndsAtChatEnded(t *testing.T) {
+	cfg := DefaultRealtimeConfig()
+	cfg.InputMode = RealtimeInputModeText
+	cfg.Dialog.Extra = &RealtimeDialogExtra{OutputModalities: []RealtimeOutputModality{RealtimeOutputModalityText}}
+	session, conn := newOpenedRealtimeSessionForTest(t, &cfg)
+	defer session.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	for round, reply := range []string{"first", "second"} {
+		if err := session.SendUserMessage(ctx, "question "+reply); err != nil {
+			t.Fatalf("round %d SendUserMessage error = %v", round, err)
+		}
+		conn.enqueue(websocket.BinaryMessage, mustBuildRealtimeServerEventFrame(t, int32(EventChatTextQueryConfirmed), session.SessionID(), "", []byte(`{"question_id":"q"}`)))
+		conn.enqueue(websocket.BinaryMessage, mustBuildRealtimeServerEventFrame(t, int32(EventChatResponse), session.SessionID(), "", []byte(`{"content":"`+reply+` ","question_id":"q","reply_id":"r"}`)))
+		conn.enqueue(websocket.BinaryMessage, mustBuildRealtimeServerEventFrame(t, int32(EventChatResponse), session.SessionID(), "", []byte(`{"content":"reply","question_id":"q","reply_id":"r"}`)))
+		conn.enqueue(websocket.BinaryMessage, mustBuildRealtimeServerEventFrame(t, int32(EventUsageResponse), session.SessionID(), "", []byte(`{"usage":{"output_text_tokens":3}}`)))
+		conn.enqueue(websocket.BinaryMessage, mustBuildRealtimeServerEventFrame(t, int32(EventChatEnded), session.SessionID(), "", []byte(`{"question_id":"q","reply_id":"r"}`)))
+
+		var text strings.Builder
+		for {
+			evt, err := session.RecvEvent(ctx)
+			if err != nil {
+				t.Fatalf("round %d RecvEvent error = %v", round, err)
+			}
+			if evt.Type == EventChatResponse {
+				text.WriteString(evt.Text)
+			}
+			if evt.Type != EventChatEnded {
+				if evt.IsFinal {
+					t.Fatalf("round %d event %d IsFinal = true before ChatEnded", round, evt.Type)
+				}
+				continue
+			}
+			if !evt.IsFinal {
+				t.Fatalf("round %d ChatEnded IsFinal = false, want true", round)
+			}
+			break
+		}
+		if got, want := text.String(), reply+" reply"; got != want {
+			t.Fatalf("round %d ChatResponse text = %q, want %q", round, got, want)
+		}
+	}
 }
 
 func TestRealtimeConfigsDoNotExposeRequestPassthroughMaps(t *testing.T) {

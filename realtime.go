@@ -1116,6 +1116,9 @@ func validateRealtimeCapabilities(cfg RealtimeConfig) error {
 		if cfg.Model == RealtimeModelSC20 && boolValue(extra.EnableMusic) {
 			return newAPIError(CodeParamError, "dialog.extra.enable_music is not supported by SC20")
 		}
+		if err := validateRealtimeOutputModalities(extra.OutputModalities); err != nil {
+			return err
+		}
 	}
 
 	if cfg.TTS.Extra != nil {
@@ -1645,6 +1648,28 @@ func validateRealtimeInputMode(mode RealtimeInputMode) error {
 	default:
 		return newAPIError(CodeParamError, "unsupported realtime input mode: "+string(mode))
 	}
+}
+
+func validateRealtimeOutputModalities(modalities []RealtimeOutputModality) error {
+	if modalities == nil {
+		return nil
+	}
+	if len(modalities) == 0 {
+		return newAPIError(CodeParamError, "dialog.extra.output_modalities must not be empty when set")
+	}
+	seen := make(map[RealtimeOutputModality]bool, len(modalities))
+	for _, modality := range modalities {
+		switch modality {
+		case RealtimeOutputModalityText, RealtimeOutputModalityAudio:
+		default:
+			return newAPIError(CodeParamError, "dialog.extra.output_modalities must contain only [text,audio]: "+string(modality))
+		}
+		if seen[modality] {
+			return newAPIError(CodeParamError, "dialog.extra.output_modalities contains duplicate "+string(modality))
+		}
+		seen[modality] = true
+	}
+	return nil
 }
 
 func normalizeRealtimeModel(model RealtimeModelVersion) (RealtimeModelVersion, error) {
