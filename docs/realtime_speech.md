@@ -395,6 +395,8 @@ Typed dialog fields:
 | `dialog.extra.enable_loudness_norm` | bool | Output loudness normalization for 2.0 models; default false. |
 | `dialog.extra.enable_conversation_truncate` | bool | Enables context truncation for 2.0 models. |
 | `dialog.extra.enable_user_query_exit` | bool | Emits an exit-intent signal in `TTSEnded`; default false. |
+| `dialog.extra.output_modalities` | `[]RealtimeOutputModality` | `text` and/or `audio`; omitted by default. Not in the public doc; see [Output Modalities](#output-modalities). |
+| `dialog.extra.scene_id` | string | Opaque enterprise-provisioned private scene configuration; omitted when empty. Not in the public doc; see [Scene ID](#scene-id). |
 
 Typed TTS extra fields:
 
@@ -419,6 +421,76 @@ Validation follows the documented stable capability boundaries:
   effect on compatible 2.0 `vv` voices;
 - speaker IDs stay opaque because public and customer-specific inventories
   evolve independently of the SDK.
+
+## Output Modalities
+
+`RealtimeDialogExtra.OutputModalities` is serialized to
+`dialog.extra.output_modalities` as a JSON string array. It selects which reply
+outputs the model produces:
+
+| SDK value | Wire value | Result |
+| --- | --- | --- |
+| unset (`nil`) | omitted | Service default: reply text and TTS audio. |
+| `[]RealtimeOutputModality{RealtimeOutputModalityText}` | `["text"]` | Reply text only; no TTS events or audio. |
+| `[]RealtimeOutputModality{RealtimeOutputModalityText, RealtimeOutputModalityAudio}` | `["text","audio"]` | Reply text plus TTS audio. |
+
+```go
+cfg.Dialog.Extra = &doubaospeech.RealtimeDialogExtra{
+	OutputModalities: []doubaospeech.RealtimeOutputModality{
+		doubaospeech.RealtimeOutputModalityText,
+	},
+}
+```
+
+This field is **not** in the upstream public Realtime API document. It comes
+from production use of the realtime dialogue service and is verified by the
+credential-backed test `tests/e2e/realtime_test.go`
+(`TestRealtimeOutputModalities`) against both `1.2.1.1` and `2.2.0.0`.
+
+The SDK rejects a non-nil empty list, unknown or differently-cased values, and
+duplicate entries before any frame is written.
+
+`examples/realtime -output-modalities text|text,audio` also requests and
+verifies the field for text and audio input modes; see
+`examples/realtime/README.md`.
+
+Observed live behavior for a `ChatTextQuery` turn with `input_mod=text`:
+
+| `output_modalities` | Event sequence (repeats collapsed) |
+| --- | --- |
+| `["text"]` | `553, 550…, 154, 559` (`154` may also arrive between `550` events) |
+| `["text","audio"]` | `553, 550…, 350, 559, 352…, 154, 351, 359` (`559` may arrive before `350`) |
+
+With `["text"]` the service sends no `TTSSentenceStart` (350),
+`TTSSentenceEnd` (351), `TTSResponse` (352), or `TTSEnded` (359). The turn ends
+at `ChatEnded` (559), which the SDK marks `IsFinal`. Callers must not wait for
+`TTSEnded` in text-only sessions, and must not treat `UsageResponse` (154) as
+the end of reply text.
+
+Other live findings:
+
+- `dialog.extra.scene_id` is not required for text-only output; see
+  [Scene ID](#scene-id).
+- `tts.speaker` is still required in text-only sessions. An empty string is
+  rejected with `45000001 speaker is empty`, and `2.2.0.0` fails with
+  `InvalidSpeaker` when the speaker is omitted. The SDK keeps requiring
+  `tts.speaker` for every session.
+
+## Scene ID
+
+`RealtimeDialogExtra.SceneID` is serialized to `dialog.extra.scene_id` when
+non-empty. Providers use it to select enterprise-provisioned private
+configuration for an account, so the value is opaque and the SDK does not
+validate it. Leave it empty unless the provider has assigned a scene.
+
+Like `output_modalities`, this field is not in the upstream public document.
+`TestRealtimeOutputModalities` sends it when `DOUBAO_REALTIME_SCENE_ID` is set;
+with `3.1.2.0` both models accepted it and kept the event sequences above.
+
+`RealtimeDuplexDialogExtra` is an alias of `RealtimeDialogExtra`, so
+`OutputModalities` and `SceneID` are also accepted in Realtime Duplex
+extensions, but they have only been verified on the numeric-event realtime
+dialogue API described here.
 
 ## UpdateConfig Request Surface
 

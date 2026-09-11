@@ -59,6 +59,17 @@ const (
 	RealtimeInputModeAudioFile RealtimeInputMode = "audio_file"
 )
 
+// RealtimeOutputModality selects one kind of model output for a realtime
+// dialogue session.
+type RealtimeOutputModality string
+
+const (
+	// RealtimeOutputModalityText returns model reply text (ChatResponse events).
+	RealtimeOutputModalityText RealtimeOutputModality = "text"
+	// RealtimeOutputModalityAudio returns synthesized reply audio (TTS events).
+	RealtimeOutputModalityAudio RealtimeOutputModality = "audio"
+)
+
 // RealtimeModelVersion selects the realtime model family.
 type RealtimeModelVersion string
 
@@ -195,6 +206,19 @@ type RealtimeDialogExtra struct {
 	EnableLoudnessNorm           *bool  `json:"enable_loudness_norm,omitempty" yaml:"enable_loudness_norm,omitempty"`
 	EnableConversationTruncate   *bool  `json:"enable_conversation_truncate,omitempty" yaml:"enable_conversation_truncate,omitempty"`
 	EnableUserQueryExit          *bool  `json:"enable_user_query_exit,omitempty" yaml:"enable_user_query_exit,omitempty"`
+
+	// OutputModalities selects which reply outputs the realtime dialogue model
+	// produces. Leave it empty for the service default (text and audio).
+	// []RealtimeOutputModality{RealtimeOutputModalityText} disables TTS audio
+	// so callers can synthesize the reply text themselves. This field is not in
+	// the public realtime dialogue documentation; see docs/realtime_speech.md.
+	OutputModalities []RealtimeOutputModality `json:"output_modalities,omitempty" yaml:"output_modalities,omitempty"`
+
+	// SceneID selects an enterprise-provisioned private scene configuration.
+	// The value is opaque and account-specific; leave it empty unless the
+	// provider has assigned one. It is not in the public realtime dialogue
+	// documentation; see docs/realtime_speech.md.
+	SceneID string `json:"scene_id,omitempty" yaml:"scene_id,omitempty"`
 }
 
 // RealtimeTTSExtra configures TTS-specific StartSession fields.

@@ -28,6 +28,12 @@ The resource ID is a WebSocket handshake header. Configure it with
 - `-expect-response`: optional substring assertion for credential-backed smoke
 - `-mode`: `realtime`, `keep_alive`, `push_to_talk`, `text`, or `audio_file`
 - `-pcm`: 16 kHz mono signed-int16 little-endian input file
+- `-output-modalities`: optional `text` or `text,audio` (or
+  `DOUBAO_REALTIME_OUTPUT_MODALITIES`); requests
+  `dialog.extra.output_modalities` and verifies every reply turn. `text`
+  requires `ChatEnded` and fails on any TTS event (including a short settle
+  window after `ChatEnded`); `text,audio` waits for `TTSEnded` and requires
+  TTS audio. Empty keeps the service default and the previous behavior.
 
 TTS output is configured independently: the SDK default is 24 kHz mono
 `pcm_s16le`. Do not treat the 16 kHz ASR input file as the TTS output contract.
@@ -58,6 +64,19 @@ go run ./examples/realtime \
   -expect-response '收到' \
   -pcm examples/asr_v2_sauc_ws/sample_zh_16k.pcm
 ```
+
+Output modality smoke (text-only reply, then text plus audio):
+
+```bash
+go run ./examples/realtime -mode text -model 1.2.1.1 -speaker "$DOUBAO_REALTIME_O20_SPEAKER" -output-modalities text
+go run ./examples/realtime -mode push_to_talk -model 2.2.0.0 -speaker "$DOUBAO_REALTIME_SC20_SPEAKER" -output-modalities text
+go run ./examples/realtime -mode text -model 1.2.1.1 -speaker "$DOUBAO_REALTIME_O20_SPEAKER" -output-modalities text,audio
+```
+
+Each verified turn prints a line such as
+`[round1] output_modalities=[text] chat_ended=true tts_events=0 audio_bytes=0`
+followed by `output modalities verified`; a mismatch exits non-zero.
+`-tts-text` needs audio output and is rejected with `-output-modalities text`.
 
 Other useful paths:
 

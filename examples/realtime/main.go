@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -23,6 +25,7 @@ func main() {
 		pcmPath        string
 		ttsText        string
 		interrupt      bool
+		outputs        string
 	)
 
 	flag.StringVar(&speaker, "speaker", strings.TrimSpace(os.Getenv("DOUBAO_REALTIME_SPEAKER")), "required TTS speaker/voice ID compatible with the selected model")
@@ -35,11 +38,17 @@ func main() {
 	flag.StringVar(&pcmPath, "pcm", "examples/asr_v2_sauc_ws/sample_zh_16k.pcm", "16 kHz mono int16 PCM file for audio-mode smoke")
 	flag.StringVar(&ttsText, "tts-text", "", "optional ChatTTSText smoke text after audio ASR end")
 	flag.BoolVar(&interrupt, "interrupt", false, "interrupt the first audio response and verify the session remains usable")
+	flag.StringVar(&outputs, "output-modalities", strings.TrimSpace(os.Getenv("DOUBAO_REALTIME_OUTPUT_MODALITIES")), "optional comma-separated reply outputs to request and verify: text or text,audio; empty keeps the service default")
 	flag.Parse()
 
 	inputMode, err := parseRealtimeInputMode(mode)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
+		os.Exit(2)
+	}
+	modalities := parseOutputModalities(outputs)
+	if ttsText != "" && modalities != nil && !slices.Contains(modalities, doubaospeech.RealtimeOutputModalityAudio) {
+		fmt.Fprintln(os.Stderr, "-tts-text requires audio in -output-modalities")
 		os.Exit(2)
 	}
 	modelVersion := doubaospeech.RealtimeModelVersion(strings.TrimSpace(model))
@@ -91,6 +100,7 @@ func main() {
 	cfg.Dialog.DialogID = strings.TrimSpace(os.Getenv("DOUBAO_REALTIME_DIALOG_ID"))
 	cfg.Dialog.Location = &doubaospeech.RealtimeLocation{City: "深圳", Country: "中国", CountryCode: "CN"}
 	cfg.Dialog.Extra = realtimeDialogExtra(searchAPIKey)
+	cfg.Dialog.Extra.OutputModalities = modalities
 	cfg.TTS.AudioConfig.SpeechRate = 0
 	cfg.TTS.AudioConfig.LoudnessRate = 0
 	cfg.EventBuffer = 1024
@@ -105,7 +115,7 @@ func main() {
 	fmt.Printf("opened session: session_id=%s dialog_id=%s\n", session.SessionID(), session.DialogID())
 
 	if inputMode != doubaospeech.RealtimeInputModeText {
-		if err := runAudioScenario(ctx, session, inputMode, pcmPath, ttsText, interrupt, expectResponse); err != nil {
+		if err := runAudioScenario(ctx, session, inputMode, pcmPath, ttsText, interrupt, expectResponse, modalities); err != nil {
 			fmt.Fprintf(os.Stderr, "audio scenario failed: %v\n", err)
 			os.Exit(1)
 		}
@@ -113,7 +123,7 @@ func main() {
 		return
 	}
 
-	if err := runTextScenario(ctx, session, round1, round2, expectResponse); err != nil {
+	if err := runTextScenario(ctx, session, round1, round2, expectResponse, modalities); err != nil {
 		fmt.Fprintf(os.Stderr, "text scenario failed: %v\n", err)
 		os.Exit(1)
 	}
@@ -140,14 +150,21 @@ func realtimeDialogExtra(searchAPIKey string) *doubaospeech.RealtimeDialogExtra 
 	return extra
 }
 
-func runTextScenario(ctx context.Context, session *doubaospeech.RealtimeSession, round1, round2, expected string) error {
+func runTextScenario(ctx context.Context, session *doubaospeech.RealtimeSession, round1, round2, expected string, modalities []doubaospeech.RealtimeOutputModality) error {
 	if err := session.SendUserMessage(ctx, round1); err != nil {
 		return fmt.Errorf("round1 send failed: %w", err)
 	}
 
-	round1Reply, err := recvUntilFinal(ctx, session, "round1")
+	round1Output := newOutputVerifier("round1", modalities)
+	round1Reply, err := recvUntilFinal(ctx, session, round1Output)
 	if err != nil {
 		return fmt.Errorf("round1 receive failed: %w", err)
+	}
+	if err := settleTextOnlyTurn(ctx, session, round1Output); err != nil {
+		return fmt.Errorf("round1 settle failed: %w", err)
+	}
+	if err := round1Output.finish(); err != nil {
+		return fmt.Errorf("round1 output assertion failed: %w", err)
 	}
 
 	if err := assertExpectedResponse(round1Reply, expected); err != nil {
@@ -158,8 +175,12 @@ func runTextScenario(ctx context.Context, session *doubaospeech.RealtimeSession,
 		return fmt.Errorf("round2 send failed: %w", err)
 	}
 
-	if _, err := recvUntilFinalWithIterator(ctx, session, "round2"); err != nil {
+	round2Output := newOutputVerifier("round2", modalities)
+	if _, err := recvUntilFinalWithIterator(ctx, session, round2Output); err != nil {
 		return fmt.Errorf("round2 receive failed: %w", err)
+	}
+	if err := round2Output.finish(); err != nil {
+		return fmt.Errorf("round2 output assertion failed: %w", err)
 	}
 	return nil
 }
@@ -177,7 +198,7 @@ func closeSession(session *doubaospeech.RealtimeSession) {
 	fmt.Println("session closed idempotently")
 }
 
-func runAudioScenario(ctx context.Context, session *doubaospeech.RealtimeSession, mode doubaospeech.RealtimeInputMode, pcmPath, ttsText string, interrupt bool, expected string) error {
+func runAudioScenario(ctx context.Context, session *doubaospeech.RealtimeSession, mode doubaospeech.RealtimeInputMode, pcmPath, ttsText string, interrupt bool, expected string, modalities []doubaospeech.RealtimeOutputModality) error {
 	if ttsText != "" {
 		if err := sendAudioTurn(ctx, session, mode, pcmPath); err != nil {
 			return err
@@ -224,7 +245,12 @@ func runAudioScenario(ctx context.Context, session *doubaospeech.RealtimeSession
 
 	var sawASR, sawASREnded, sawResponse bool
 	responseText := strings.Builder{}
+	output := newOutputVerifier("audio", modalities)
+	var outputErr error
 	err := recvUntilEvent(ctx, session, "audio", func(evt *doubaospeech.RealtimeEvent) bool {
+		if outputErr = output.observe(evt); outputErr != nil {
+			return true
+		}
 		if evt.Type == doubaospeech.EventASRResponse && strings.TrimSpace(evt.Text) != "" {
 			sawASR = true
 		}
@@ -239,6 +265,9 @@ func runAudioScenario(ctx context.Context, session *doubaospeech.RealtimeSession
 		if evt.Type == doubaospeech.EventChatResponse && evt.Text != "" {
 			responseText.WriteString(evt.Text)
 		}
+		if output.configured() {
+			return sawASR && sawASREnded && output.done(evt)
+		}
 		if expected != "" {
 			return sawASR && sawASREnded && evt.Type == doubaospeech.EventChatEnded
 		}
@@ -247,7 +276,124 @@ func runAudioScenario(ctx context.Context, session *doubaospeech.RealtimeSession
 	if err != nil {
 		return err
 	}
+	if outputErr != nil {
+		return outputErr
+	}
+	if err := settleTextOnlyTurn(ctx, session, output); err != nil {
+		return err
+	}
+	if err := output.finish(); err != nil {
+		return err
+	}
 	return assertExpectedResponse(responseText.String(), expected)
+}
+
+// outputVerifier checks one reply turn against the requested output
+// modalities. Text-only turns end at ChatEnded and must carry no TTS events;
+// turns that request audio end at TTSEnded and must carry TTS audio.
+type outputVerifier struct {
+	label      string
+	modalities []doubaospeech.RealtimeOutputModality
+	chatEnded  bool
+	ttsEnded   bool
+	ttsEvents  int
+	audioBytes int
+}
+
+func newOutputVerifier(label string, modalities []doubaospeech.RealtimeOutputModality) *outputVerifier {
+	return &outputVerifier{label: label, modalities: modalities}
+}
+
+func (v *outputVerifier) configured() bool {
+	return len(v.modalities) > 0
+}
+
+func (v *outputVerifier) wants(modality doubaospeech.RealtimeOutputModality) bool {
+	return slices.Contains(v.modalities, modality)
+}
+
+// observe records one event and fails fast when a text-only turn returns TTS.
+func (v *outputVerifier) observe(evt *doubaospeech.RealtimeEvent) error {
+	switch evt.Type {
+	case doubaospeech.EventChatEnded:
+		v.chatEnded = true
+	case doubaospeech.EventTTSStarted, doubaospeech.EventTTSSegmentEnd:
+		v.ttsEvents++
+	case doubaospeech.EventTTSAudioData:
+		v.ttsEvents++
+		v.audioBytes += len(evt.Audio)
+	case doubaospeech.EventTTSFinished:
+		v.ttsEvents++
+		v.ttsEnded = true
+	}
+	if v.configured() && !v.wants(doubaospeech.RealtimeOutputModalityAudio) && v.ttsEvents > 0 {
+		return fmt.Errorf("%s: output_modalities=%v but received TTS event %d", v.label, v.modalities, evt.Type)
+	}
+	return nil
+}
+
+// done reports whether the turn has settled. Without configured modalities it
+// keeps the SDK final-event behavior.
+func (v *outputVerifier) done(evt *doubaospeech.RealtimeEvent) bool {
+	if !v.configured() {
+		return evt.IsFinal
+	}
+	if v.wants(doubaospeech.RealtimeOutputModalityText) && !v.chatEnded {
+		return false
+	}
+	return !v.wants(doubaospeech.RealtimeOutputModalityAudio) || v.ttsEnded
+}
+
+func (v *outputVerifier) finish() error {
+	if !v.configured() {
+		return nil
+	}
+	fmt.Printf("[%s] output_modalities=%v chat_ended=%v tts_events=%d audio_bytes=%d\n", v.label, v.modalities, v.chatEnded, v.ttsEvents, v.audioBytes)
+	if v.wants(doubaospeech.RealtimeOutputModalityText) && !v.chatEnded {
+		return fmt.Errorf("%s: output_modalities=%v but ChatEnded was not received", v.label, v.modalities)
+	}
+	if v.wants(doubaospeech.RealtimeOutputModalityAudio) && v.audioBytes == 0 {
+		return fmt.Errorf("%s: output_modalities=%v but no TTS audio was received", v.label, v.modalities)
+	}
+	fmt.Printf("[%s] output modalities verified\n", v.label)
+	return nil
+}
+
+// settleTextOnlyTurn waits briefly after a text-only ChatEnded so late TTS
+// events would still be caught; text-only sessions never send TTSEnded.
+func settleTextOnlyTurn(ctx context.Context, session *doubaospeech.RealtimeSession, v *outputVerifier) error {
+	if !v.configured() || v.wants(doubaospeech.RealtimeOutputModalityAudio) {
+		return nil
+	}
+	settleCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	for {
+		evt, err := session.RecvEvent(settleCtx)
+		if err != nil {
+			if errors.Is(err, context.DeadlineExceeded) && ctx.Err() == nil {
+				return nil
+			}
+			return err
+		}
+		if evt == nil {
+			return nil
+		}
+		printRealtimeEvent(v.label, evt)
+		if err := v.observe(evt); err != nil {
+			return err
+		}
+	}
+}
+
+func parseOutputModalities(value string) []doubaospeech.RealtimeOutputModality {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	var modalities []doubaospeech.RealtimeOutputModality
+	for part := range strings.SplitSeq(value, ",") {
+		modalities = append(modalities, doubaospeech.RealtimeOutputModality(strings.TrimSpace(part)))
+	}
+	return modalities
 }
 
 func assertExpectedResponse(response, expected string) error {
@@ -361,7 +507,8 @@ func printRealtimeEvent(label string, evt *doubaospeech.RealtimeEvent) {
 	fmt.Printf("[%s][event=%d][final=%v]\n", label, evt.Type, evt.IsFinal)
 }
 
-func recvUntilFinal(ctx context.Context, session *doubaospeech.RealtimeSession, round string) (string, error) {
+func recvUntilFinal(ctx context.Context, session *doubaospeech.RealtimeSession, output *outputVerifier) (string, error) {
+	round := output.label
 	builder := strings.Builder{}
 
 	for {
@@ -385,7 +532,10 @@ func recvUntilFinal(ctx context.Context, session *doubaospeech.RealtimeSession, 
 			}
 		}
 
-		if evt.IsFinal {
+		if err := output.observe(evt); err != nil {
+			return "", err
+		}
+		if output.done(evt) {
 			break
 		}
 	}
@@ -393,7 +543,8 @@ func recvUntilFinal(ctx context.Context, session *doubaospeech.RealtimeSession, 
 	return builder.String(), nil
 }
 
-func recvUntilFinalWithIterator(ctx context.Context, session *doubaospeech.RealtimeSession, round string) (string, error) {
+func recvUntilFinalWithIterator(ctx context.Context, session *doubaospeech.RealtimeSession, output *outputVerifier) (string, error) {
+	round := output.label
 	builder := strings.Builder{}
 	type recvItem struct {
 		evt *doubaospeech.RealtimeEvent
@@ -447,7 +598,10 @@ func recvUntilFinalWithIterator(ctx context.Context, session *doubaospeech.Realt
 				}
 			}
 
-			if evt.IsFinal {
+			if err := output.observe(evt); err != nil {
+				return "", err
+			}
+			if output.done(evt) {
 				return builder.String(), nil
 			}
 		}
