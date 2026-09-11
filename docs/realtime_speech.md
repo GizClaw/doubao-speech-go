@@ -396,6 +396,7 @@ Typed dialog fields:
 | `dialog.extra.enable_conversation_truncate` | bool | Enables context truncation for 2.0 models. |
 | `dialog.extra.enable_user_query_exit` | bool | Emits an exit-intent signal in `TTSEnded`; default false. |
 | `dialog.extra.output_modalities` | `[]RealtimeOutputModality` | `text` and/or `audio`; omitted by default. Not in the public doc; see [Output Modalities](#output-modalities). |
+| `dialog.extra.scene_id` | string | Opaque enterprise-provisioned private scene configuration; omitted when empty. Not in the public doc; see [Scene ID](#scene-id). |
 
 Typed TTS extra fields:
 
@@ -453,26 +454,39 @@ Observed live behavior for a `ChatTextQuery` turn with `input_mod=text`:
 
 | `output_modalities` | Event sequence (repeats collapsed) |
 | --- | --- |
-| `["text"]` | `553, 550…, 154, 559` |
-| `["text","audio"]` | `553, 550…, 350, 559, 352…, 154, 351, 359` |
+| `["text"]` | `553, 550…, 154, 559` (`154` may also arrive between `550` events) |
+| `["text","audio"]` | `553, 550…, 350, 559, 352…, 154, 351, 359` (`559` may arrive before `350`) |
 
 With `["text"]` the service sends no `TTSSentenceStart` (350),
 `TTSSentenceEnd` (351), `TTSResponse` (352), or `TTSEnded` (359). The turn ends
 at `ChatEnded` (559), which the SDK marks `IsFinal`. Callers must not wait for
-`TTSEnded` in text-only sessions.
+`TTSEnded` in text-only sessions, and must not treat `UsageResponse` (154) as
+the end of reply text.
 
 Other live findings:
 
-- `dialog.extra.scene_id` is not required; text-only output works without it,
-  and sending `scene_id: "3.1.2.0"` does not change the event sequence.
+- `dialog.extra.scene_id` is not required for text-only output; see
+  [Scene ID](#scene-id).
 - `tts.speaker` is still required in text-only sessions. An empty string is
   rejected with `45000001 speaker is empty`, and `2.2.0.0` fails with
   `InvalidSpeaker` when the speaker is omitted. The SDK keeps requiring
   `tts.speaker` for every session.
 
-`RealtimeDuplexDialogExtra` is an alias of `RealtimeDialogExtra`, so the field
-is also accepted in Realtime Duplex extensions, but it has only been verified
-on the numeric-event realtime dialogue API described here.
+## Scene ID
+
+`RealtimeDialogExtra.SceneID` is serialized to `dialog.extra.scene_id` when
+non-empty. Providers use it to select enterprise-provisioned private
+configuration for an account, so the value is opaque and the SDK does not
+validate it. Leave it empty unless the provider has assigned a scene.
+
+Like `output_modalities`, this field is not in the upstream public document.
+`TestRealtimeOutputModalities` sends it when `DOUBAO_REALTIME_SCENE_ID` is set;
+with `3.1.2.0` both models accepted it and kept the event sequences above.
+
+`RealtimeDuplexDialogExtra` is an alias of `RealtimeDialogExtra`, so
+`OutputModalities` and `SceneID` are also accepted in Realtime Duplex
+extensions, but they have only been verified on the numeric-event realtime
+dialogue API described here.
 
 ## UpdateConfig Request Surface
 

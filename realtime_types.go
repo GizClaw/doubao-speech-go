@@ -213,6 +213,12 @@ type RealtimeDialogExtra struct {
 	// so callers can synthesize the reply text themselves. This field is not in
 	// the public realtime dialogue documentation; see docs/realtime_speech.md.
 	OutputModalities []RealtimeOutputModality `json:"output_modalities,omitempty" yaml:"output_modalities,omitempty"`
+
+	// SceneID selects an enterprise-provisioned private scene configuration.
+	// The value is opaque and account-specific; leave it empty unless the
+	// provider has assigned one. It is not in the public realtime dialogue
+	// documentation; see docs/realtime_speech.md.
+	SceneID string `json:"scene_id,omitempty" yaml:"scene_id,omitempty"`
 }
 
 // RealtimeTTSExtra configures TTS-specific StartSession fields.

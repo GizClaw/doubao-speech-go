@@ -336,6 +336,7 @@ func TestRealtimeStartPayloadFullWireContract(t *testing.T) {
 			EnableConversationTruncate:   new(true),
 			EnableUserQueryExit:          new(false),
 			OutputModalities:             []RealtimeOutputModality{RealtimeOutputModalityText, RealtimeOutputModalityAudio},
+			SceneID:                      "scene-1",
 		},
 	}
 	cfg.Prompt = RealtimePromptConfig{System: "compat prompt", Variables: map[string]string{"name": "豆包"}}
@@ -402,6 +403,7 @@ func TestRealtimeStartPayloadFullWireContract(t *testing.T) {
 				"enable_conversation_truncate":true,
 				"enable_user_query_exit":false,
 				"output_modalities":["text","audio"],
+				"scene_id":"scene-1",
 				"input_mod":"push_to_talk",
 				"model":"1.2.1.1"
 			}
@@ -439,6 +441,14 @@ func TestRealtimeStartPayloadOutputModalitiesWireContract(t *testing.T) {
 				RealtimeOutputModalityAudio,
 			}},
 			want: `{"output_modalities":["text","audio"],"input_mod":"text","model":"1.2.1.1"}`,
+		},
+		{
+			name: "text only with scene",
+			extra: &RealtimeDialogExtra{
+				OutputModalities: []RealtimeOutputModality{RealtimeOutputModalityText},
+				SceneID:          "3.1.2.0",
+			},
+			want: `{"output_modalities":["text"],"scene_id":"3.1.2.0","input_mod":"text","model":"1.2.1.1"}`,
 		},
 	}
 

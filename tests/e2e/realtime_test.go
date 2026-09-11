@@ -53,6 +53,9 @@ func TestRealtimeOutputModalities(t *testing.T) {
 		doubaospeech.WithUserID("realtime-e2e"),
 	)
 
+	// Optional enterprise-provisioned scene; applied to every session.
+	sceneID := firstEnv("DOUBAO_REALTIME_SCENE_ID")
+
 	models := []struct {
 		name    string
 		model   doubaospeech.RealtimeModelVersion
@@ -67,7 +70,7 @@ func TestRealtimeOutputModalities(t *testing.T) {
 		}
 		t.Run(model.name, func(t *testing.T) {
 			t.Run("text", func(t *testing.T) {
-				turn := runRealtimeTextTurn(t, client, model.model, model.speaker, []doubaospeech.RealtimeOutputModality{
+				turn := runRealtimeTextTurn(t, client, model.model, model.speaker, sceneID, []doubaospeech.RealtimeOutputModality{
 					doubaospeech.RealtimeOutputModalityText,
 				})
 				if turn.audioBytes != 0 || turn.counts[doubaospeech.EventTTSAudioData] != 0 {
@@ -90,7 +93,7 @@ func TestRealtimeOutputModalities(t *testing.T) {
 				}
 			})
 			t.Run("text_audio", func(t *testing.T) {
-				turn := runRealtimeTextTurn(t, client, model.model, model.speaker, []doubaospeech.RealtimeOutputModality{
+				turn := runRealtimeTextTurn(t, client, model.model, model.speaker, sceneID, []doubaospeech.RealtimeOutputModality{
 					doubaospeech.RealtimeOutputModalityText,
 					doubaospeech.RealtimeOutputModalityAudio,
 				})
@@ -132,6 +135,7 @@ func runRealtimeTextTurn(
 	client *doubaospeech.Client,
 	model doubaospeech.RealtimeModelVersion,
 	speaker string,
+	sceneID string,
 	modalities []doubaospeech.RealtimeOutputModality,
 ) realtimeE2ETurn {
 	t.Helper()
@@ -143,7 +147,7 @@ func runRealtimeTextTurn(
 	cfg.InputMode = doubaospeech.RealtimeInputModeText
 	cfg.TTS.Speaker = speaker
 	cfg.Instructions = realtimeE2EInstructions
-	cfg.Dialog.Extra = &doubaospeech.RealtimeDialogExtra{OutputModalities: modalities}
+	cfg.Dialog.Extra = &doubaospeech.RealtimeDialogExtra{OutputModalities: modalities, SceneID: sceneID}
 
 	session, err := client.Realtime.OpenSession(ctx, &cfg)
 	if err != nil {
@@ -199,9 +203,10 @@ func runRealtimeTextTurn(
 	}
 
 	t.Logf(
-		"realtime model=%s modalities=%v text=%q audio_bytes=%d chat_response=%d chat_ended=%d tts_sentence_start=%d tts_sentence_end=%d tts_response=%d tts_ended=%d usage=%d events=%s",
+		"realtime model=%s modalities=%v scene_id=%q text=%q audio_bytes=%d chat_response=%d chat_ended=%d tts_sentence_start=%d tts_sentence_end=%d tts_response=%d tts_ended=%d usage=%d events=%s",
 		model,
 		modalities,
+		sceneID,
 		turn.text,
 		turn.audioBytes,
 		turn.counts[doubaospeech.EventChatResponse],
