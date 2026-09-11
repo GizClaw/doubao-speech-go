@@ -450,6 +450,10 @@ credential-backed test `tests/e2e/realtime_test.go`
 The SDK rejects a non-nil empty list, unknown or differently-cased values, and
 duplicate entries before any frame is written.
 
+`examples/realtime -output-modalities text|text,audio` also requests and
+verifies the field for text and audio input modes; see
+`examples/realtime/README.md`.
+
 Observed live behavior for a `ChatTextQuery` turn with `input_mod=text`:
 
 | `output_modalities` | Event sequence (repeats collapsed) |
