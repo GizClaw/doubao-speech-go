@@ -302,6 +302,10 @@ func (s *TTSV2WSSession) sendFinishConnection(ctx context.Context) error {
 }
 
 func (s *TTSV2WSSession) sendStartSession(ctx context.Context) error {
+	additions, err := marshalTTSV2Additions(s.cfg.ExplicitLanguage)
+	if err != nil {
+		return err
+	}
 	payload := map[string]any{
 		"user": map[string]any{
 			"uid": s.client.config.userID,
@@ -316,6 +320,9 @@ func (s *TTSV2WSSession) sendStartSession(ctx context.Context) error {
 		},
 	}
 
+	if additions != "" {
+		payload["req_params"].(map[string]any)["additions"] = additions
+	}
 	return s.sendSessionEvent(ctx, ttsV2EventStartSession, payload)
 }
 

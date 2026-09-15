@@ -41,6 +41,7 @@ Current `TTSV2WSConfig` typed fields:
 
 | SDK field | Upstream path | Notes |
 | --- | --- | --- |
+| `ExplicitLanguage` | `req_params.additions.explicit_language` (inside JSON string) | Optional reading language. |
 | `Speaker` | `req_params.speaker` | Required voice ID. |
 | `Format` | `req_params.audio_params.format` | Output audio format. |
 | `SampleRate` | `req_params.audio_params.sample_rate` | Output audio sample rate. |
@@ -91,7 +92,7 @@ The SDK sends this as event ID `1` with namespace `BidirectionalTTS`.
 | `model` | string | no | not typed | `seed-tts-2.0-standard` | Used when `speaker` is a clone voice. |
 | `speaker` | string | yes | `Speaker` | empty | Voice ID from Console > Voice Library. |
 | `audio_params` | object | yes | partly typed | empty | Output audio configuration. |
-| `additions` | string | no | not typed | empty | JSON-string extension parameters. |
+| `additions` | string | no | `ExplicitLanguage` | empty | JSON-string extension parameters. |
 
 `model` values:
 
@@ -113,24 +114,32 @@ The SDK sends this as event ID `1` with namespace `BidirectionalTTS`.
 
 ### Additions
 
-`additions` is a JSON string in the upstream protocol.
+`additions` is a JSON string in the upstream protocol. Both
+`TTSV2Request.ExplicitLanguage` (HTTP) and `TTSV2WSConfig.ExplicitLanguage`
+(WebSocket) serialize as, for example,
+`"additions":"{\"explicit_language\":\"en\"}"` inside `req_params`.
+The SDK omits `additions` when no language is set. It never sends
+`audio_params.language`.
 
-| Field | Type | Default | Notes |
-| --- | --- | --- | --- |
-| `max_length_to_filter_parenthesis` | int | service default | `0` means do not filter parenthesized text; `100` means filter it. |
-| `disable_markdown_filter` | bool | `false` | `true` parses and removes Markdown syntax, for example `**hello**` is read as `hello`; `false` keeps raw characters. |
-| `disable_emoji_filter` | bool | `false` | Controls emoji parsing/filtering. |
-| `enable_latex_tn` | bool | `false` | Enables LaTeX text reading. |
-| `latex_parser` | string | empty | `v2` enables stronger LaTeX reading. It increases latency and requires `disable_markdown_filter=true`. |
-| `explicit_language` | string | empty | Explicit reading language. When set, input text must contain that language or the request may fail/no-return. |
-| `explicit_dialect` | string | empty | Explicit dialect. The selected `speaker` must support the dialect. |
-| `aigc_watermark` | bool | `false` | Adds rhythm marker at the end of synthesized audio. |
-| `aigc_metadata` | object | empty | Adds hidden metadata watermark to `mp3`, `wav`, or `ogg_opus`. |
-| `cache_config` | object | empty | Cache configuration. |
-| `post_process` | object | empty | Post-processing configuration. |
-| `context_texts` | array | empty | Voice instructions. |
-| `use_tag_parser` | bool | `false` | Enables voice-label COT parsing. |
-| `section_id` | string | empty | Multi-turn session ID for serial synthesis in the same context. |
+`TTSV2Request.Language` remains as a deprecated compatibility alias for
+`ExplicitLanguage`; when both are set, `ExplicitLanguage` takes precedence.
+
+| Field | Type | SDK field | Default | Notes |
+| --- | --- | --- | --- | --- |
+| `max_length_to_filter_parenthesis` | int | not typed | service default | `0` means do not filter parenthesized text; `100` means filter it. |
+| `disable_markdown_filter` | bool | not typed | `false` | `true` parses and removes Markdown syntax, for example `**hello**` is read as `hello`; `false` keeps raw characters. |
+| `disable_emoji_filter` | bool | not typed | `false` | Controls emoji parsing/filtering. |
+| `enable_latex_tn` | bool | not typed | `false` | Enables LaTeX text reading. |
+| `latex_parser` | string | not typed | empty | `v2` enables stronger LaTeX reading. It increases latency and requires `disable_markdown_filter=true`. |
+| `explicit_language` | string | `ExplicitLanguage` | empty | Explicit reading language. When set, input text must contain that language or the request may fail/no-return. |
+| `explicit_dialect` | string | not typed | empty | Explicit dialect. The selected `speaker` must support the dialect. |
+| `aigc_watermark` | bool | not typed | `false` | Adds rhythm marker at the end of synthesized audio. |
+| `aigc_metadata` | object | not typed | empty | Adds hidden metadata watermark to `mp3`, `wav`, or `ogg_opus`. |
+| `cache_config` | object | not typed | empty | Cache configuration. |
+| `post_process` | object | not typed | empty | Post-processing configuration. |
+| `context_texts` | array | not typed | empty | Voice instructions. |
+| `use_tag_parser` | bool | not typed | `false` | Enables voice-label COT parsing. |
+| `section_id` | string | not typed | empty | Multi-turn session ID for serial synthesis in the same context. |
 
 `explicit_language` values:
 

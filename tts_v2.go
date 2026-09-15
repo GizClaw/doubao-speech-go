@@ -34,7 +34,14 @@ type TTSV2Request struct {
 	PitchRate  int `json:"pitch_rate,omitempty" yaml:"pitch_rate,omitempty"`
 	VolumeRate int `json:"volume_rate,omitempty" yaml:"volume_rate,omitempty"`
 
-	Emotion  string `json:"emotion,omitempty" yaml:"emotion,omitempty"`
+	Emotion string `json:"emotion,omitempty" yaml:"emotion,omitempty"`
+
+	// ExplicitLanguage sets additions.explicit_language (zh-cn, en, ja, es-mx, id, pt-br, ko).
+	ExplicitLanguage string `json:"explicit_language,omitempty" yaml:"explicit_language,omitempty"`
+
+	// Language is a compatibility alias for ExplicitLanguage.
+	//
+	// Deprecated: Use ExplicitLanguage, which takes precedence when both are set.
 	Language string `json:"language,omitempty" yaml:"language,omitempty"`
 
 	ResourceID string           `json:"resource_id,omitempty" yaml:"resource_id,omitempty"`
@@ -72,7 +79,11 @@ func (s *TTSServiceV2) Stream(ctx context.Context, req *TTSV2Request) iter.Seq2[
 			return
 		}
 
-		requestPayload := s.buildStreamRequestBody(normalized)
+		requestPayload, err := s.buildStreamRequestBody(normalized)
+		if err != nil {
+			yield(nil, err)
+			return
+		}
 		bodyBytes, err := json.Marshal(requestPayload)
 		if err != nil {
 			yield(nil, wrapError(err, "marshal tts stream request"))
@@ -123,7 +134,15 @@ func (s *TTSServiceV2) Stream(ctx context.Context, req *TTSV2Request) iter.Seq2[
 	}
 }
 
-func (s *TTSServiceV2) buildStreamRequestBody(req *TTSV2Request) ttsV2HTTPStreamRequest {
+func (s *TTSServiceV2) buildStreamRequestBody(req *TTSV2Request) (ttsV2HTTPStreamRequest, error) {
+	language := req.ExplicitLanguage
+	if language == "" {
+		language = req.Language
+	}
+	additions, err := marshalTTSV2Additions(language)
+	if err != nil {
+		return ttsV2HTTPStreamRequest{}, err
+	}
 	requestBody := ttsV2HTTPStreamRequest{
 		User: ttsV2RequestUser{UID: s.client.config.userID},
 		ReqParams: ttsV2RequestParams{
@@ -137,13 +156,27 @@ func (s *TTSServiceV2) buildStreamRequestBody(req *TTSV2Request) ttsV2HTTPStream
 				PitchRate:  req.PitchRate,
 				VolumeRate: req.VolumeRate,
 				Emotion:    req.Emotion,
-				Language:   req.Language,
 			},
 			MixSpeaker: req.MixSpeaker,
+			Additions:  additions,
 		},
 	}
 
-	return requestBody
+	return requestBody, nil
+}
+
+// marshalTTSV2Additions encodes extension parameters as the upstream JSON string.
+func marshalTTSV2Additions(language string) (string, error) {
+	if language == "" {
+		return "", nil
+	}
+	data, err := json.Marshal(struct {
+		ExplicitLanguage string `json:"explicit_language"`
+	}{ExplicitLanguage: language})
+	if err != nil {
+		return "", wrapError(err, "marshal tts additions")
+	}
+	return string(data), nil
 }
 
 func normalizeTTSV2Request(req *TTSV2Request) (*TTSV2Request, error) {
@@ -301,6 +334,7 @@ type ttsV2RequestUser struct {
 }
 
 type ttsV2RequestParams struct {
+	Additions   string           `json:"additions,omitempty"`
 	Text        string           `json:"text"`
 	Speaker     string           `json:"speaker"`
 	AudioParams ttsV2AudioParams `json:"audio_params"`
@@ -315,7 +349,6 @@ type ttsV2AudioParams struct {
 	PitchRate  int    `json:"pitch_rate,omitempty"`
 	VolumeRate int    `json:"volume_rate,omitempty"`
 	Emotion    string `json:"emotion,omitempty"`
-	Language   string `json:"language,omitempty"`
 }
 
 type ttsV2HTTPStreamLine struct {

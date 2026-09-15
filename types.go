@@ -202,6 +202,9 @@ type Word = ASRV2Word
 
 // TTSV2WSConfig is bidirectional TTS V2 WebSocket session config.
 type TTSV2WSConfig struct {
+	// ExplicitLanguage sets additions.explicit_language (zh-cn, en, ja, es-mx, id, pt-br, ko).
+	ExplicitLanguage string `json:"explicit_language,omitempty" yaml:"explicit_language,omitempty"`
+
 	Speaker    string      `json:"speaker" yaml:"speaker"`
 	Format     AudioFormat `json:"format,omitempty" yaml:"format,omitempty"`
 	SampleRate SampleRate  `json:"sample_rate,omitempty" yaml:"sample_rate,omitempty"`

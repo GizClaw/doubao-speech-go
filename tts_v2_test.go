@@ -316,3 +316,70 @@ func collectTTSV2HTTPStreamChunks(seq iter.Seq2[*TTSV2Chunk, error]) ([]*TTSV2Ch
 	}
 	return chunks, nil
 }
+
+func TestTTSV2LanguageWireJSON(t *testing.T) {
+	cases := []struct {
+		name     string
+		explicit string
+		alias    string
+		want     string
+	}{
+		{name: "unset"},
+		{name: "legacy alias", alias: "en", want: `"{\"explicit_language\":\"en\"}"`},
+		{name: "explicit wins", explicit: "ja", alias: "en", want: `"{\"explicit_language\":\"ja\"}"`},
+	}
+	for _, language := range []string{"zh-cn", "en", "ja", "es-mx", "id", "pt-br", "ko"} {
+		cases = append(cases, struct {
+			name, explicit, alias, want string
+		}{name: language, explicit: language, want: `"{\"explicit_language\":\"` + language + `\"}"`})
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			client := NewClient("test-app", WithUserID("tester"))
+			req, err := normalizeTTSV2Request(&TTSV2Request{
+				Text: "hello", Speaker: "speaker",
+				ExplicitLanguage: tc.explicit, Language: tc.alias,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, err := client.TTSV2.buildStreamRequestBody(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			data, err := json.Marshal(body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			assertTTSV2EncodedLanguageFields(t, data, tc.want)
+		})
+	}
+}
+
+func assertTTSV2EncodedLanguageFields(t *testing.T, data []byte, wantAdditions string) {
+	t.Helper()
+	var body struct {
+		ReqParams map[string]json.RawMessage `json:"req_params"`
+	}
+	if err := json.Unmarshal(data, &body); err != nil {
+		t.Fatal(err)
+	}
+	got, present := body.ReqParams["additions"]
+	if wantAdditions == "" {
+		if present {
+			t.Fatalf("additions must be absent, got %s", got)
+		}
+	} else if string(got) != wantAdditions {
+		t.Fatalf("additions = %s, want exact JSON %s", got, wantAdditions)
+	}
+	var audio map[string]json.RawMessage
+	if err := json.Unmarshal(body.ReqParams["audio_params"], &audio); err != nil {
+		t.Fatal(err)
+	}
+	if language, ok := audio["language"]; ok {
+		t.Fatalf("audio_params.language must be absent, got %s", language)
+	}
+	if language, ok := body.ReqParams["explicit_language"]; ok {
+		t.Fatalf("req_params.explicit_language must be nested inside additions, got %s", language)
+	}
+}

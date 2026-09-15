@@ -408,3 +408,44 @@ func gzipBytesForTest(t *testing.T, in []byte) []byte {
 
 	return buf.Bytes()
 }
+
+func TestTTSV2WSLanguageWireJSON(t *testing.T) {
+	for _, language := range []string{"", "zh-cn", "en", "ja", "es-mx", "id", "pt-br", "ko"} {
+		t.Run("language="+language, func(t *testing.T) {
+			conn := newFakeWSConn()
+			cfg, err := normalizeTTSV2WSConfig(TTSV2WSConfig{
+				Speaker: "speaker", ExplicitLanguage: language,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			session := &TTSV2WSSession{
+				conn: conn, client: NewClient("test-app", WithUserID("tester")),
+				cfg: cfg, sessionID: "test-session", closed: make(chan struct{}),
+			}
+			if err := session.sendStartSession(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			writes := conn.writesSnapshot()
+			if len(writes) != 1 {
+				t.Fatalf("write count = %d, want 1", len(writes))
+			}
+			frame := writes[0]
+			if event := int32(binary.BigEndian.Uint32(frame[4:8])); event != ttsV2EventStartSession {
+				t.Fatalf("event = %d, want StartSession", event)
+			}
+			// Client session frames include the session ID before the payload length.
+			offset := 12 + int(binary.BigEndian.Uint32(frame[8:12]))
+			size := int(binary.BigEndian.Uint32(frame[offset : offset+4]))
+			payload := frame[offset+4:]
+			if len(payload) != size {
+				t.Fatalf("payload size = %d, want %d", len(payload), size)
+			}
+			want := ""
+			if language != "" {
+				want = `"{\"explicit_language\":\"` + language + `\"}"`
+			}
+			assertTTSV2EncodedLanguageFields(t, payload, want)
+		})
+	}
+}
