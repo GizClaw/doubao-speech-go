@@ -221,7 +221,10 @@ func parseTTSV2HTTPStream(body io.Reader, baseMeta responseMetadata, yield func(
 
 	for {
 		line, err := reader.ReadBytes('\n')
-		if len(line) > 0 {
+		truncated := errors.Is(err, io.ErrUnexpectedEOF)
+		// A truncated JSON line must not hide the read error or replace the last
+		// complete frame's metadata. Complete frames still take precedence.
+		if len(line) > 0 && (!truncated || json.Valid(line)) {
 			chunk, isDone, meta, parseErr := parseTTSV2HTTPStreamLine(line, baseMeta)
 			lastMeta = meta.withFallback(lastMeta)
 			if parseErr != nil {
@@ -239,13 +242,17 @@ func parseTTSV2HTTPStream(body io.Reader, baseMeta responseMetadata, yield func(
 		}
 
 		if err != nil {
-			if errors.Is(err, io.EOF) {
+			if errors.Is(err, io.EOF) || truncated {
 				if seenFinal {
 					return nil
 				}
+				message := "tts stream ended before final frame"
+				if truncated {
+					message = "tts stream truncated before final frame"
+				}
 				return &Error{
 					Code:    CodeServerError,
-					Message: "tts stream ended before final frame",
+					Message: message,
 					ReqID:   lastMeta.ReqID,
 					TraceID: lastMeta.TraceID,
 					LogID:   lastMeta.LogID,
