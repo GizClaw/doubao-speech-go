@@ -303,6 +303,115 @@ func TestTTSV2HTTPStreamEOFWithoutFinalFrameReturnsError(t *testing.T) {
 	}
 }
 
+func TestTTSV2HTTPStreamBodyTermination(t *testing.T) {
+	audioLine := `{"reqid":"req-termination","trace_id":"trace-termination","log_id":"log-frame","code":0,"data":"YXVkaW8="}`
+	finalLine := `{"code":20000000,"data":null}`
+	partialLine := `{"reqid":"req-incomplete","code":0,"data":"YXV`
+
+	tests := []struct {
+		name        string
+		body        string
+		truncated   bool
+		wantChunks  int
+		wantFinal   bool
+		wantCode    int
+		wantMessage string
+	}{
+		{
+			name: "truncated mid-line", body: audioLine + "\n" + partialLine, truncated: true,
+			wantChunks: 1, wantCode: CodeServerError, wantMessage: "tts stream truncated before final frame",
+		},
+		{
+			name: "truncated between lines", body: audioLine + "\n", truncated: true,
+			wantChunks: 1, wantCode: CodeServerError, wantMessage: "tts stream truncated before final frame",
+		},
+		{
+			name: "truncated complete line without newline", body: audioLine, truncated: true,
+			wantChunks: 1, wantCode: CodeServerError, wantMessage: "tts stream truncated before final frame",
+		},
+		{
+			name: "truncated after final", body: audioLine + "\n" + finalLine + "\n" + partialLine, truncated: true,
+			wantChunks: 2, wantFinal: true,
+		},
+		{
+			name: "truncated final without newline", body: audioLine + "\n" + finalLine, truncated: true,
+			wantChunks: 2, wantFinal: true,
+		},
+		{
+			name: "clean EOF before final", body: audioLine + "\n",
+			wantChunks: 1, wantCode: CodeServerError, wantMessage: "tts stream ended before final frame",
+		},
+		{
+			name: "clean EOF complete line without newline", body: audioLine,
+			wantChunks: 1, wantCode: CodeServerError, wantMessage: "tts stream ended before final frame",
+		},
+		{
+			name: "clean EOF after final", body: audioLine + "\n" + finalLine + "\n",
+			wantChunks: 2, wantFinal: true,
+		},
+		{
+			name: "clean EOF final without newline", body: audioLine + "\n" + finalLine,
+			wantChunks: 2, wantFinal: true,
+		},
+		{
+			name: "truncated with complete business error", truncated: true,
+			body:     `{"reqid":"req-termination","trace_id":"trace-termination","log_id":"log-frame","code":55000000,"message":"speaker mismatch"}`,
+			wantCode: 55000000, wantMessage: "speaker mismatch",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				contentLength := len(tt.body)
+				if tt.truncated {
+					// Closing before Content-Length is satisfied makes net/http return io.ErrUnexpectedEOF.
+					contentLength++
+				}
+				w.Header().Set("Content-Length", fmt.Sprint(contentLength))
+				w.Header().Set("X-Tt-Logid", "log-header")
+				_, _ = fmt.Fprint(w, tt.body)
+			}))
+			defer server.Close()
+
+			client := NewClient("app-test", WithAPIKey("key-test"), WithBaseURL(server.URL))
+			chunks, err := collectTTSV2HTTPStreamChunks(client.TTSV2.Stream(context.Background(), &TTSV2Request{
+				Text: "body termination", Speaker: "zh_female_vv_uranus_bigtts",
+			}))
+			if len(chunks) != tt.wantChunks {
+				t.Fatalf("chunk count = %d, want %d", len(chunks), tt.wantChunks)
+			}
+			if len(chunks) > 0 {
+				if string(chunks[0].Audio) != "audio" || chunks[0].IsLast {
+					t.Fatalf("first chunk = %#v, want non-final audio chunk", chunks[0])
+				}
+				if got := chunks[len(chunks)-1].IsLast; got != tt.wantFinal {
+					t.Fatalf("last chunk IsLast = %t, want %t", got, tt.wantFinal)
+				}
+			}
+			if tt.wantCode == 0 {
+				if err != nil {
+					t.Fatalf("Stream error = %v, want nil", err)
+				}
+				return
+			}
+			apiErr, ok := AsError(err)
+			if !ok {
+				t.Fatalf("want *Error, got %T (%v)", err, err)
+			}
+			if apiErr.Code != tt.wantCode || apiErr.Message != tt.wantMessage {
+				t.Fatalf("error = (%d, %q), want (%d, %q)", apiErr.Code, apiErr.Message, tt.wantCode, tt.wantMessage)
+			}
+			if apiErr.ReqID != "req-termination" || apiErr.TraceID != "trace-termination" || apiErr.LogID != "log-frame" {
+				t.Fatalf("metadata = reqid %q trace %q log %q, want req-termination trace-termination log-frame", apiErr.ReqID, apiErr.TraceID, apiErr.LogID)
+			}
+			if got, want := apiErr.Retryable(), tt.wantCode == CodeServerError; got != want {
+				t.Fatalf("Retryable = %t, want %t", got, want)
+			}
+		})
+	}
+}
+
 func collectTTSV2HTTPStreamChunks(seq iter.Seq2[*TTSV2Chunk, error]) ([]*TTSV2Chunk, error) {
 	chunks := make([]*TTSV2Chunk, 0)
 	for chunk, err := range seq {
