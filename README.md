@@ -28,6 +28,22 @@ through `WithAppKey` and `WithAccessKey`.
 client := doubaospeech.NewClient(appID, doubaospeech.WithAPIKey(apiKey))
 ```
 
+### HTTP timeouts
+
+`TTSV2.Stream` has no default whole-request timeout. Its caller context controls
+cancellation while waiting for response headers and reading audio; provider
+completion or errors end the stream. No fallback or inactivity deadline is added.
+Non-streaming HTTP operations (Audio Generation and Voice Clone) retain their
+30-second default timeout.
+
+`WithTimeout(d)` explicitly sets a whole-request timeout for **both** streaming
+and non-streaming HTTP, including body reads; `WithTimeout(0)` disables it.
+Prefer passing a context when a particular operation needs a deadline.
+`WithHTTPClient` and `WithHTTPTransport` use the supplied client/doer unchanged
+for both modes and take precedence over `WithTimeout`, regardless of option
+order. A custom client's `Timeout` therefore still applies to streams.
+These HTTP options do not configure WebSocket sessions.
+
 Available service fields:
 
 | Service field | API |

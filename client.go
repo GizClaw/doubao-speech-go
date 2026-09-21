@@ -75,11 +75,13 @@ type clientConfig struct {
 	cluster    string
 	resourceID string
 
-	baseURL    string
-	wsURL      string
-	httpClient transport.HTTPDoer
-	timeout    time.Duration
-	userID     string
+	baseURL          string
+	wsURL            string
+	httpClient       transport.HTTPDoer
+	streamHTTPClient transport.HTTPDoer
+	timeout          time.Duration
+	streamTimeout    time.Duration
+	userID           string
 }
 
 // Option configures Client.
@@ -101,6 +103,9 @@ func NewClient(appID string, opts ...Option) *Client {
 
 	if isNilHTTPDoer(cfg.httpClient) {
 		cfg.httpClient = &http.Client{Timeout: cfg.timeout}
+		cfg.streamHTTPClient = &http.Client{Timeout: cfg.streamTimeout}
+	} else {
+		cfg.streamHTTPClient = cfg.httpClient
 	}
 
 	c := &Client{config: cfg}
@@ -168,7 +173,8 @@ func WithWebSocketURL(url string) Option {
 	}
 }
 
-// WithHTTPClient sets a custom HTTP client.
+// WithHTTPClient sets a custom HTTP client for streaming and non-streaming HTTP.
+// Its settings, including Timeout, are used unchanged and override WithTimeout.
 func WithHTTPClient(client *http.Client) Option {
 	return func(c *clientConfig) {
 		if client == nil {
@@ -178,7 +184,8 @@ func WithHTTPClient(client *http.Client) Option {
 	}
 }
 
-// WithHTTPTransport sets a custom HTTP transport doer.
+// WithHTTPTransport sets a custom doer for streaming and non-streaming HTTP.
+// The doer is used unchanged and takes precedence over WithTimeout.
 func WithHTTPTransport(doer transport.HTTPDoer) Option {
 	return func(c *clientConfig) {
 		if isNilHTTPDoer(doer) {
@@ -202,10 +209,15 @@ func isNilHTTPDoer(doer transport.HTTPDoer) bool {
 	}
 }
 
-// WithTimeout sets request timeout.
+// WithTimeout explicitly sets the whole-request timeout for SDK-created HTTP
+// clients, including streaming response bodies. Zero disables the timeout.
+// Without this option, non-streaming HTTP requests default to 30 seconds and
+// HTTP streams have no whole-request timeout; their context controls cancellation.
+// This option does not affect WebSockets or custom HTTP clients/transports.
 func WithTimeout(timeout time.Duration) Option {
 	return func(c *clientConfig) {
 		c.timeout = timeout
+		c.streamTimeout = timeout
 	}
 }
 
