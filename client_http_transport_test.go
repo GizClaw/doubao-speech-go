@@ -117,7 +117,7 @@ func TestTTSV2StreamWithTypedNilTransportReturnsStructuredError(t *testing.T) {
 	)
 
 	var typedNil *panicOnNilDoer
-	client.config.httpClient = typedNil
+	client.config.streamHTTPClient = typedNil
 
 	defer func() {
 		if recovered := recover(); recovered != nil {

@@ -66,6 +66,14 @@ Current `TTSV2WSConfig` typed fields:
 types `text`, `speaker`, output audio parameters, emotion/language, and
 `mix_speaker`.
 
+HTTP streaming has no default whole-request deadline, including the wait for
+response headers and the streamed body. Pass a cancelable context to stop the
+request; otherwise the provider's final frame or error determines its end.
+`WithTimeout` explicitly opts into a whole-request HTTP timeout, and custom
+HTTP clients retain their configured timeout. See the
+[HTTP timeout policy](../README.md#http-timeouts) for precedence and the separate
+non-streaming defaults.
+
 Many upstream bidirectional fields are documented below but are not yet typed by
 the WebSocket SDK. Add typed fields and tests when exposing them; do not add a
 generic public passthrough map.

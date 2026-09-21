@@ -71,6 +71,8 @@ type TTSV2Chunk struct {
 }
 
 // Stream synthesizes speech with TTS V2 HTTP streaming endpoint.
+// By default there is no whole-request timeout: ctx governs cancellation while
+// awaiting headers and reading audio. Explicit HTTP timeout options still apply.
 func (s *TTSServiceV2) Stream(ctx context.Context, req *TTSV2Request) iter.Seq2[*TTSV2Chunk, error] {
 	return func(yield func(*TTSV2Chunk, error) bool) {
 		normalized, err := normalizeTTSV2Request(req)
@@ -101,12 +103,12 @@ func (s *TTSServiceV2) Stream(ctx context.Context, req *TTSV2Request) iter.Seq2[
 		resourceID := s.client.resolveResourceID(normalized.ResourceID, ResourceTTSV2)
 		auth.ApplyV2Headers(httpReq, s.client.authCredentials(), resourceID)
 
-		if isNilHTTPDoer(s.client.config.httpClient) {
+		if isNilHTTPDoer(s.client.config.streamHTTPClient) {
 			yield(nil, newAPIError(CodeServerError, "http transport is nil"))
 			return
 		}
 
-		resp, err := s.client.config.httpClient.Do(httpReq)
+		resp, err := s.client.config.streamHTTPClient.Do(httpReq)
 		if err != nil {
 			yield(nil, wrapError(err, "send tts stream request"))
 			return
