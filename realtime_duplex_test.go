@@ -303,7 +303,7 @@ func TestRealtimeDuplexRecvEvent(t *testing.T) {
 	conn.enqueue(websocket.TextMessage, []byte(`{"type":"response.output_audio.delta","event_id":"evt-2","response_id":"resp-1","delta":"AQID"}`))
 	conn.enqueue(websocket.TextMessage, []byte(`{"type":"response.function_call_arguments.done","event_id":"evt-3","items":[{"call_id":"call-1","name":"lookup","arguments":"{\"q\":\"x\"}"}]}`))
 	conn.enqueue(websocket.TextMessage, []byte(`{"type":"vendor.new_event","event_id":"evt-4","custom":true}`))
-	conn.enqueue(websocket.TextMessage, []byte(`{"type":"response.done","event_id":"evt-5","response":{"usage":{"total_tokens":2255,"input_tokens":2073,"output_tokens":182,"input_token_details":{"text_tokens":2021,"audio_tokens":52,"cached_tokens":8,"cached_tokens_details":{"text_tokens":8}},"output_token_details":{"text_tokens":47,"audio_tokens":135}}}}`))
+	conn.enqueue(websocket.TextMessage, []byte(`{"type":"response.done","event_id":"evt-5","response":{"usage":{"total_tokens":5822,"input_tokens":2915,"output_tokens":216,"input_token_details":{"text_tokens":2735,"audio_tokens":180,"cached_tokens":2691,"cached_tokens_details":{"text_tokens":2691}},"output_token_details":{"text_tokens":91,"audio_tokens":125}}}}`))
 
 	evt, err := session.RecvEvent(context.Background())
 	if err != nil {
@@ -334,12 +334,12 @@ func TestRealtimeDuplexRecvEvent(t *testing.T) {
 		t.Fatalf("RecvEvent response.done error = %v", err)
 	}
 	want := RealtimeDuplexUsage{
-		TotalTokens: 2255, InputTokens: 2073, OutputTokens: 182,
+		TotalTokens: 5822, InputTokens: 2915, OutputTokens: 216,
 		InputTokenDetails: RealtimeDuplexInputTokenDetails{
-			TextTokens: 2021, AudioTokens: 52, CachedTokens: 8,
-			CachedTokensDetails: RealtimeDuplexTokenDetails{TextTokens: 8},
+			TextTokens: 2735, AudioTokens: 180, CachedTokens: 2691,
+			CachedTokensDetails: RealtimeDuplexTokenDetails{TextTokens: 2691},
 		},
-		OutputTokenDetails: RealtimeDuplexTokenDetails{TextTokens: 47, AudioTokens: 135},
+		OutputTokenDetails: RealtimeDuplexTokenDetails{TextTokens: 91, AudioTokens: 125},
 	}
 	if evt.Type != RealtimeDuplexEventResponseDone || evt.Usage == nil || *evt.Usage != want {
 		t.Fatalf("response.done usage = %+v, want %+v", evt.Usage, want)

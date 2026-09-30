@@ -89,7 +89,8 @@ type realtimeDuplexConversationItemsEvent struct {
 }
 
 // RealtimeDuplexUsage is the token usage of one realtime duplex interaction.
-// InputTokens includes the cached tokens counted in InputTokenDetails.
+// Cached input is reported apart from InputTokens:
+// TotalTokens = InputTokens + InputTokenDetails.CachedTokens + OutputTokens.
 type RealtimeDuplexUsage struct {
 	TotalTokens        int                             `json:"total_tokens"`
 	InputTokens        int                             `json:"input_tokens"`
@@ -98,7 +99,8 @@ type RealtimeDuplexUsage struct {
 	OutputTokenDetails RealtimeDuplexTokenDetails      `json:"output_token_details"`
 }
 
-// RealtimeDuplexInputTokenDetails splits input tokens by modality and cache.
+// RealtimeDuplexInputTokenDetails splits InputTokens by modality and reports
+// the cached input, which InputTokens does not include, by modality.
 type RealtimeDuplexInputTokenDetails struct {
 	TextTokens          int                        `json:"text_tokens"`
 	AudioTokens         int                        `json:"audio_tokens"`
