@@ -132,7 +132,7 @@ func run(args []string) error {
 			}
 		}
 
-		prompt = nextOldPrompt(round, oldResult.Text, transcript)
+		prompt = nextOldPrompt(round, transcript)
 	}
 
 	return nil
@@ -144,7 +144,7 @@ func parseConfig(args []string) (exampleConfig, error) {
 	fs := flag.NewFlagSet("realtime_duplex", flag.ContinueOnError)
 	fs.IntVar(&cfg.Rounds, "rounds", 2, "number of old-realtime to duplex dialogue rounds")
 	fs.StringVar(&cfg.OutDir, "out-dir", "", "optional directory for old/duplex PCM artifacts and transcripts")
-	fs.StringVar(&cfg.OldSpeaker, "old-speaker", firstNonEmpty(os.Getenv("DOUBAO_REALTIME_SPEAKER"), "zh_female_cancan"), "old realtime TTS speaker")
+	fs.StringVar(&cfg.OldSpeaker, "old-speaker", firstNonEmpty(os.Getenv("DOUBAO_REALTIME_SPEAKER"), "zh_female_vv_jupiter_bigtts"), "old realtime TTS speaker")
 	fs.StringVar((*string)(&cfg.OldModel), "old-model", firstNonEmpty(os.Getenv("DOUBAO_REALTIME_MODEL"), string(doubaospeech.RealtimeModelO20)), "old realtime model")
 	fs.StringVar(&cfg.DuplexModel, "duplex-model", firstNonEmpty(os.Getenv("DOUBAO_DUPLEX_MODEL"), doubaospeech.RealtimeDuplexModelDefault), "duplex model")
 	fs.StringVar(&cfg.DuplexVoice, "duplex-voice", firstNonEmpty(os.Getenv("DOUBAO_DUPLEX_VOICE"), "zh_male_xiaotian_jupiter_bigtts"), "duplex output voice")
@@ -277,6 +277,7 @@ func runDuplexTurn(ctx context.Context, session *doubaospeech.RealtimeDuplexSess
 	go sendDuplexSilence(silenceCtx, session)
 
 	var result duplexTurnResult
+	audioDone := false
 	for {
 		evt, err := session.RecvEvent(ctx)
 		if err != nil {
@@ -306,7 +307,17 @@ func runDuplexTurn(ctx context.Context, session *doubaospeech.RealtimeDuplexSess
 			}
 		case doubaospeech.RealtimeDuplexEventResponseOutputAudioDelta:
 			result.Audio = append(result.Audio, evt.Audio...)
-		case doubaospeech.RealtimeDuplexEventResponseOutputAudioDone, doubaospeech.RealtimeDuplexEventSessionClosed:
+		case doubaospeech.RealtimeDuplexEventResponseOutputAudioDone:
+			if len(result.Audio) == 0 {
+				return result, errors.New("duplex returned no audio")
+			}
+			// Keep reading until response.done, which reports the usage.
+			audioDone = true
+		case doubaospeech.RealtimeDuplexEventResponseDone:
+			if audioDone {
+				return result, nil
+			}
+		case doubaospeech.RealtimeDuplexEventSessionClosed:
 			if len(result.Audio) == 0 {
 				return result, errors.New("duplex returned no audio")
 			}
@@ -350,6 +361,7 @@ func transcribePCM(ctx context.Context, client *doubaospeech.Client, audio []byt
 			lastText = result.Text
 		}
 		if result.IsFinal {
+			fmt.Printf("[asr.usage] billed audio duration %v\n", session.AudioDuration())
 			return strings.TrimSpace(lastText), nil
 		}
 	}
@@ -462,10 +474,11 @@ func duplexInstructions() string {
 	}, " ")
 }
 
-func nextOldPrompt(round int, oldText string, duplexTranscript string) string {
+// nextOldPrompt quotes only the Duplex answer: the spoken prompt is sent at
+// real-time pace, so repeating the previous prompt would outgrow the turn.
+func nextOldPrompt(round int, duplexTranscript string) string {
 	return fmt.Sprintf(
-		"Please say exactly this Chinese sentence, without answering it or adding anything else: 上一轮我说的是“%s”，对方回答的是“%s”。请继续要求对方调用 lookup_weather 工具，并让对方用一句话回答第 %d 轮结果。",
-		compactForPrompt(oldText),
+		"Please say exactly this Chinese sentence, without answering it or adding anything else: 你上一轮回答的是“%s”。请再调用 lookup_weather 工具，用一句话回答第 %d 轮结果。",
 		compactForPrompt(duplexTranscript),
 		round+1,
 	)
@@ -524,6 +537,16 @@ func printDuplexEvent(evt *doubaospeech.RealtimeDuplexEvent) {
 		fmt.Printf("[duplex.audio.delta] %d bytes\n", len(evt.Audio))
 	case doubaospeech.RealtimeDuplexEventResponseOutputAudioDone:
 		fmt.Printf("[duplex.audio.done] response=%s status=%s\n", evt.ResponseID, evt.StatusCode)
+	case doubaospeech.RealtimeDuplexEventResponseDone:
+		if usage := evt.Usage; usage != nil {
+			cached := usage.InputTokenDetails.CachedTokensDetails
+			fmt.Printf("[duplex.usage] input=%d (text=%d audio=%d) cached=%d (text=%d audio=%d) output=%d (text=%d audio=%d) total=%d\n",
+				usage.InputTokens, usage.InputTokenDetails.TextTokens, usage.InputTokenDetails.AudioTokens,
+				usage.InputTokenDetails.CachedTokens, cached.TextTokens, cached.AudioTokens,
+				usage.OutputTokens, usage.OutputTokenDetails.TextTokens, usage.OutputTokenDetails.AudioTokens, usage.TotalTokens)
+		} else {
+			fmt.Println("[duplex.usage] not reported")
+		}
 	}
 }
 

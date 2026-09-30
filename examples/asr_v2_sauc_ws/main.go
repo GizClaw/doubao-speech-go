@@ -133,6 +133,9 @@ func main() {
 			break
 		}
 	}
+	// 16-bit mono PCM: two bytes per sample.
+	sent := time.Duration(len(audio)) * time.Second / time.Duration(2*sampleRate)
+	fmt.Printf("billed audio duration: %v (sent %v)\n", session.AudioDuration(), sent.Round(time.Millisecond))
 }
 
 func isLFSPointerContent(data []byte) bool {
