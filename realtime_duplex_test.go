@@ -303,6 +303,7 @@ func TestRealtimeDuplexRecvEvent(t *testing.T) {
 	conn.enqueue(websocket.TextMessage, []byte(`{"type":"response.output_audio.delta","event_id":"evt-2","response_id":"resp-1","delta":"AQID"}`))
 	conn.enqueue(websocket.TextMessage, []byte(`{"type":"response.function_call_arguments.done","event_id":"evt-3","items":[{"call_id":"call-1","name":"lookup","arguments":"{\"q\":\"x\"}"}]}`))
 	conn.enqueue(websocket.TextMessage, []byte(`{"type":"vendor.new_event","event_id":"evt-4","custom":true}`))
+	conn.enqueue(websocket.TextMessage, []byte(`{"type":"response.done","event_id":"evt-5","response":{"usage":{"total_tokens":5822,"input_tokens":2915,"output_tokens":216,"input_token_details":{"text_tokens":2735,"audio_tokens":180,"cached_tokens":2691,"cached_tokens_details":{"text_tokens":2691}},"output_token_details":{"text_tokens":91,"audio_tokens":125}}}}`))
 
 	evt, err := session.RecvEvent(context.Background())
 	if err != nil {
@@ -326,6 +327,22 @@ func TestRealtimeDuplexRecvEvent(t *testing.T) {
 	}
 	if evt.Type != "vendor.new_event" || len(evt.Raw) == 0 {
 		t.Fatalf("unknown event = %+v", evt)
+	}
+
+	evt, err = session.RecvEvent(context.Background())
+	if err != nil {
+		t.Fatalf("RecvEvent response.done error = %v", err)
+	}
+	want := RealtimeDuplexUsage{
+		TotalTokens: 5822, InputTokens: 2915, OutputTokens: 216,
+		InputTokenDetails: RealtimeDuplexInputTokenDetails{
+			TextTokens: 2735, AudioTokens: 180, CachedTokens: 2691,
+			CachedTokensDetails: RealtimeDuplexTokenDetails{TextTokens: 2691},
+		},
+		OutputTokenDetails: RealtimeDuplexTokenDetails{TextTokens: 91, AudioTokens: 125},
+	}
+	if evt.Type != RealtimeDuplexEventResponseDone || evt.Usage == nil || *evt.Usage != want {
+		t.Fatalf("response.done usage = %+v, want %+v", evt.Usage, want)
 	}
 }
 
@@ -392,5 +409,20 @@ func assertEventType(t *testing.T, payload []byte, want string) {
 	}
 	if event.Type != want {
 		t.Fatalf("event type = %q, want %s; payload=%s", event.Type, want, payload)
+	}
+}
+
+func TestRealtimeDuplexResponseDoneRejectsMalformedUsage(t *testing.T) {
+	evt, err := decodeRealtimeDuplexEvent([]byte(`{"type":"response.done","response":{"usage":{"input_tokens":"2073"}}}`))
+	if err == nil {
+		t.Fatalf("decode malformed usage = %+v, want error", evt)
+	}
+	if evt == nil || evt.Type != RealtimeDuplexEventResponseDone || evt.Usage != nil {
+		t.Fatalf("event = %+v, want response.done without usage", evt)
+	}
+
+	evt, err = decodeRealtimeDuplexEvent([]byte(`{"type":"response.done","response":{}}`))
+	if err != nil || evt.Usage != nil {
+		t.Fatalf("decode response.done without usage = %+v, %v; want nil usage and no error", evt, err)
 	}
 }

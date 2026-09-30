@@ -19,6 +19,11 @@ import (
 const (
 	ttsV2HTTPStreamPath = "/api/v3/tts/unidirectional"
 	ttsV2CodeStreamDone = 20000000
+
+	// ttsV2UsageHeader asks the provider to report billed usage on the final
+	// frame; ttsV2UsageTextWords selects the billed text length.
+	ttsV2UsageHeader    = "X-Control-Require-Usage-Tokens-Return"
+	ttsV2UsageTextWords = "text_words"
 )
 
 // TTSV2Request represents a TTS V2 stream request.
@@ -68,6 +73,16 @@ type TTSV2Chunk struct {
 	LogID   string `json:"log_id,omitempty"`
 	Code    int    `json:"code"`
 	Message string `json:"message,omitempty"`
+	// Usage is the provider-billed usage. Only the final chunk carries it,
+	// and only when the provider reports it.
+	Usage *TTSV2Usage `json:"usage,omitempty"`
+}
+
+// TTSV2Usage is the usage the provider bills for one synthesis request.
+type TTSV2Usage struct {
+	// TextWords is the billed text length as counted by the provider: one per
+	// Unicode character, including spaces and punctuation.
+	TextWords int `json:"text_words"`
 }
 
 // Stream synthesizes speech with TTS V2 HTTP streaming endpoint.
@@ -99,6 +114,7 @@ func (s *TTSServiceV2) Stream(ctx context.Context, req *TTSV2Request) iter.Seq2[
 			return
 		}
 		httpReq.Header.Set("Content-Type", "application/json")
+		httpReq.Header.Set(ttsV2UsageHeader, ttsV2UsageTextWords)
 
 		resourceID := s.client.resolveResourceID(normalized.ResourceID, ResourceTTSV2)
 		auth.ApplyV2Headers(httpReq, s.client.authCredentials(), resourceID)
@@ -305,6 +321,9 @@ func parseTTSV2HTTPStreamLine(line []byte, baseMeta responseMetadata) (*TTSV2Chu
 		Code:    payload.Code,
 		Message: payload.Message,
 	}
+	if isLast {
+		chunk.Usage = payload.Usage
+	}
 
 	return chunk, isLast, meta, nil
 }
@@ -365,4 +384,5 @@ type ttsV2HTTPStreamLine struct {
 	Message string          `json:"message"`
 	Done    bool            `json:"done"`
 	Data    json.RawMessage `json:"data"`
+	Usage   *TTSV2Usage     `json:"usage"`
 }

@@ -289,7 +289,7 @@ events.
 | Context | `conversation.item.updated` | `ConversationItems` | Ack for context update. |
 | Context | `conversation.item.deleted` | `ConversationItems` | Ack for context delete. If nothing is deleted, upstream can return `status_code:40000010` and `message:"empty conversation deleted messages"`. |
 | FC | `response.function_call_arguments.done` | `FunctionCalls` | Function-call arguments completed. Each item contains `call_id`, `name`, and JSON-string `arguments`. Client must return tool output with the same `call_id`. |
-| Usage | `response.done` | `Usage` raw JSON | One interaction finished and returned usage statistics. |
+| Usage | `response.done` | `Usage` | One interaction finished. `Usage` is parsed from `response.usage`: input, output, and total tokens with text/audio/image details. Cached input is reported apart from `InputTokens`: `TotalTokens = InputTokens + InputTokenDetails.CachedTokens + OutputTokens`. |
 | Usage | `response.canceled` | raw event | Ack for `response.cancel`. |
 | Error | `error` | `Error` | Error event. See upstream integration guide for detailed error codes. |
 

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	doubaospeech "github.com/GizClaw/doubao-speech-go"
 )
@@ -80,6 +81,7 @@ func main() {
 		audioBuffer bytes.Buffer
 		chunkCount  int
 		lastReqID   string
+		usage       *doubaospeech.TTSV2Usage
 	)
 
 	for chunk, err := range client.TTSV2.Stream(ctx, req) {
@@ -98,6 +100,7 @@ func main() {
 			chunkCount++
 		}
 		if chunk.IsLast {
+			usage = chunk.Usage
 			break
 		}
 	}
@@ -118,6 +121,11 @@ func main() {
 	}
 
 	fmt.Printf("stream synthesis finished: chunks=%d bytes=%d reqid=%s output=%s\n", chunkCount, audioBuffer.Len(), lastReqID, outputPath)
+	if usage != nil {
+		fmt.Printf("billed usage: text_words=%d text_runes=%d\n", usage.TextWords, utf8.RuneCountInString(text))
+	} else {
+		fmt.Println("billed usage: not reported")
+	}
 }
 
 func ensureOutputDir(outputPath string) error {

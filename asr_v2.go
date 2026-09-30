@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/GizClaw/doubao-speech-go/internal/auth"
@@ -47,6 +48,10 @@ type ASRV2Session struct {
 	writeMu   sync.Mutex
 	closeOnce sync.Once
 	closeErr  error
+
+	// audioDurationMS is the largest processed-audio duration the provider
+	// reported; only receiveLoop writes it.
+	audioDurationMS atomic.Int64
 }
 
 // OpenStreamSession opens a SAUC V2 WebSocket session.
@@ -372,6 +377,13 @@ func (s *ASRV2Session) writeBinary(packet []byte) error {
 	return s.conn.WriteMessage(websocket.BinaryMessage, packet)
 }
 
+// AudioDuration returns the audio duration the provider reported processing so
+// far, including audio that produced no text. Once the session has finished it
+// is the duration the provider bills.
+func (s *ASRV2Session) AudioDuration() time.Duration {
+	return time.Duration(s.audioDurationMS.Load()) * time.Millisecond
+}
+
 func (s *ASRV2Session) receiveLoop() {
 	defer close(s.recvDone)
 	defer close(s.resultCh)
@@ -407,7 +419,10 @@ func (s *ASRV2Session) receiveLoop() {
 
 			switch frame.MessageType {
 			case protocol.MessageTypeFullServer:
-				result, err := decodeASRV2Result(frame, s.reqID)
+				result, durationMS, err := decodeASRV2Result(frame, s.reqID)
+				if int64(durationMS) > s.audioDurationMS.Load() {
+					s.audioDurationMS.Store(int64(durationMS))
+				}
 				if err != nil {
 					s.pushErr(err)
 					continue
@@ -432,7 +447,9 @@ func (s *ASRV2Session) receiveLoop() {
 	}
 }
 
-func decodeASRV2Result(frame *protocol.ParsedFrame, fallbackReqID string) (*ASRV2Result, error) {
+// decodeASRV2Result parses one server response. The returned audio duration is
+// reported even by frames that carry no result text.
+func decodeASRV2Result(frame *protocol.ParsedFrame, fallbackReqID string) (*ASRV2Result, int, error) {
 	var payload struct {
 		ReqID     string `json:"reqid"`
 		TraceID   string `json:"trace_id"`
@@ -464,11 +481,11 @@ func decodeASRV2Result(frame *protocol.ParsedFrame, fallbackReqID string) (*ASRV
 	}
 
 	if err := json.Unmarshal(frame.Payload, &payload); err != nil {
-		return nil, wrapError(err, "unmarshal asr result")
+		return nil, 0, wrapError(err, "unmarshal asr result")
 	}
 
 	if payload.Code != 0 && payload.Code != CodeSuccess && payload.Code != CodeASRSuccess {
-		return nil, &Error{
+		return nil, 0, &Error{
 			Code:      payload.Code,
 			Message:   payload.Message,
 			ReqID:     payload.ReqID,
@@ -480,7 +497,7 @@ func decodeASRV2Result(frame *protocol.ParsedFrame, fallbackReqID string) (*ASRV
 
 	if payload.Result.Text == "" && len(payload.Result.Utterances) == 0 {
 		// This can be an intermediate control frame.
-		return nil, nil
+		return nil, payload.AudioInfo.Duration, nil
 	}
 
 	utterances := make([]ASRV2Utterance, 0, len(payload.Result.Utterances))
@@ -525,7 +542,7 @@ func decodeASRV2Result(frame *protocol.ParsedFrame, fallbackReqID string) (*ASRV
 		TraceID:    payload.TraceID,
 		LogID:      firstNonEmpty(payload.LogID, payload.LogIDAlt),
 		ConnectID:  firstNonEmpty(payload.ConnectID, fallbackReqID),
-	}, nil
+	}, payload.AudioInfo.Duration, nil
 }
 
 func parseWSErrorPayload(payload []byte, fallbackCode uint32) error {
