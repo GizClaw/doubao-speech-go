@@ -508,6 +508,40 @@ func TestRecvResultAndError(t *testing.T) {
 	}
 }
 
+func TestASRV2SessionAudioDurationIncludesTextlessFrames(t *testing.T) {
+	client := NewClient("test-app", WithAPIKey("key-test"))
+	conn := newFakeWSConn()
+
+	svc := newASRServiceV2(client)
+	svc.dialer = &fakeDialer{conn: conn}
+
+	session, err := svc.OpenStreamSession(context.Background(), &ASRV2Config{Format: FormatPCM, SampleRate: SampleRate16000})
+	if err != nil {
+		t.Fatalf("OpenStreamSession error = %v", err)
+	}
+	defer session.Close()
+
+	resultPayload := []byte(`{"audio_info":{"duration":1200},"result":{"text":"hello"}}`)
+	conn.enqueue(websocket.BinaryMessage, buildServerFrame(protocol.MessageTypeFullServer, protocol.FlagPositiveSequence, resultPayload))
+	silencePayload := []byte(`{"audio_info":{"duration":3400},"result":{"text":""}}`)
+	conn.enqueue(websocket.BinaryMessage, buildServerFrame(protocol.MessageTypeFullServer, protocol.FlagNegativeWithSeq, silencePayload))
+	conn.reads <- wsReadItem{err: &websocket.CloseError{Code: websocket.CloseNormalClosure}}
+
+	var texts []string
+	for result, err := range session.Recv() {
+		if err != nil {
+			t.Fatalf("unexpected recv error: %v", err)
+		}
+		texts = append(texts, result.Text)
+	}
+	if len(texts) != 1 || texts[0] != "hello" {
+		t.Fatalf("results = %q, want only hello", texts)
+	}
+	if got := session.AudioDuration(); got != 3400*time.Millisecond {
+		t.Fatalf("AudioDuration() = %v, want 3.4s", got)
+	}
+}
+
 func TestDecodeASRV2ResultFinalByNegativeSequence(t *testing.T) {
 	payload := []byte(`{"reqid":"r-final","audio_info":{"duration":1200},"result":{"text":"hello","utterances":[{"text":"hello","start_time":0,"end_time":1000,"definite":false}]}}`)
 	raw := buildServerFrame(protocol.MessageTypeFullServer, protocol.FlagNegativeSequence, payload)
@@ -516,7 +550,7 @@ func TestDecodeASRV2ResultFinalByNegativeSequence(t *testing.T) {
 		t.Fatalf("ParseServerFrame error = %v", err)
 	}
 
-	result, err := decodeASRV2Result(frame, "fallback")
+	result, _, err := decodeASRV2Result(frame, "fallback")
 	if err != nil {
 		t.Fatalf("decodeASRV2Result error = %v", err)
 	}

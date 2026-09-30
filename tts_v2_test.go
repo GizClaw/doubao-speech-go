@@ -199,6 +199,37 @@ func TestTTSV2HTTPStreamOnlyFinalFrame(t *testing.T) {
 	}
 }
 
+func TestTTSV2HTTPStreamReportsProviderUsage(t *testing.T) {
+	usageHeader := make(chan string, 1)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		usageHeader <- r.Header.Get("X-Control-Require-Usage-Tokens-Return")
+		_, _ = fmt.Fprintf(w, `{"code":0,"data":"%s"}`+"\n", base64.StdEncoding.EncodeToString([]byte("audio")))
+		_, _ = fmt.Fprintln(w, `{"code":20000000,"message":"OK","data":null,"usage":{"text_words":22}}`)
+	}))
+	defer server.Close()
+
+	client := NewClient("app-test", WithAPIKey("key-test"), WithBaseURL(server.URL))
+	chunks, err := collectTTSV2HTTPStreamChunks(client.TTSV2.Stream(context.Background(), &TTSV2Request{
+		Text:    "你好，世界！Hello world 123.",
+		Speaker: "zh_female_vv_uranus_bigtts",
+	}))
+	if err != nil {
+		t.Fatalf("Stream error = %v", err)
+	}
+	if got := <-usageHeader; got != "text_words" {
+		t.Fatalf("usage header = %q, want text_words", got)
+	}
+	if len(chunks) != 2 {
+		t.Fatalf("chunk count = %d, want 2", len(chunks))
+	}
+	if chunks[0].Usage != nil {
+		t.Fatalf("audio chunk usage = %+v, want nil", chunks[0].Usage)
+	}
+	if chunks[1].Usage == nil || chunks[1].Usage.TextWords != 22 {
+		t.Fatalf("final chunk usage = %+v, want text_words 22", chunks[1].Usage)
+	}
+}
+
 func TestTTSV2HTTPStreamResourceSpeakerMismatchError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = fmt.Fprintln(w, `{"reqid":"req-mismatch","code":55000000,"message":"resource ID is mismatched with speaker related resource"}`)

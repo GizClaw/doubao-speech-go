@@ -88,6 +88,32 @@ type realtimeDuplexConversationItemsEvent struct {
 	Items   []RealtimeDuplexConversationItem `json:"items"`
 }
 
+// RealtimeDuplexUsage is the token usage of one realtime duplex interaction.
+// InputTokens includes the cached tokens counted in InputTokenDetails.
+type RealtimeDuplexUsage struct {
+	TotalTokens        int                             `json:"total_tokens"`
+	InputTokens        int                             `json:"input_tokens"`
+	OutputTokens       int                             `json:"output_tokens"`
+	InputTokenDetails  RealtimeDuplexInputTokenDetails `json:"input_token_details"`
+	OutputTokenDetails RealtimeDuplexTokenDetails      `json:"output_token_details"`
+}
+
+// RealtimeDuplexInputTokenDetails splits input tokens by modality and cache.
+type RealtimeDuplexInputTokenDetails struct {
+	TextTokens          int                        `json:"text_tokens"`
+	AudioTokens         int                        `json:"audio_tokens"`
+	ImageTokens         int                        `json:"image_tokens"`
+	CachedTokens        int                        `json:"cached_tokens"`
+	CachedTokensDetails RealtimeDuplexTokenDetails `json:"cached_tokens_details"`
+}
+
+// RealtimeDuplexTokenDetails splits tokens by modality.
+type RealtimeDuplexTokenDetails struct {
+	TextTokens  int `json:"text_tokens"`
+	AudioTokens int `json:"audio_tokens"`
+	ImageTokens int `json:"image_tokens"`
+}
+
 // RealtimeDuplexEvent is one parsed server event.
 type RealtimeDuplexEvent struct {
 	Type    string          `json:"type"`
@@ -109,8 +135,9 @@ type RealtimeDuplexEvent struct {
 
 	ConversationItems []RealtimeDuplexConversationItem `json:"items,omitempty"`
 	FunctionCalls     []RealtimeDuplexFunctionCall     `json:"function_calls,omitempty"`
-	Usage             json.RawMessage                  `json:"usage,omitempty"`
-	Error             *Error                           `json:"error,omitempty"`
+	// Usage is the token usage response.done reports for one interaction.
+	Usage *RealtimeDuplexUsage `json:"usage,omitempty"`
+	Error *Error               `json:"error,omitempty"`
 }
 
 func decodeRealtimeDuplexEvent(payload []byte) (*RealtimeDuplexEvent, error) {
@@ -194,10 +221,12 @@ func decodeRealtimeDuplexEvent(payload []byte) (*RealtimeDuplexEvent, error) {
 		evt.FunctionCalls = body.Items
 	case RealtimeDuplexEventResponseDone:
 		var body struct {
-			Usage json.RawMessage `json:"usage"`
+			Response struct {
+				Usage *RealtimeDuplexUsage `json:"usage"`
+			} `json:"response"`
 		}
 		_ = json.Unmarshal(payload, &body)
-		evt.Usage = body.Usage
+		evt.Usage = body.Response.Usage
 	case RealtimeDuplexEventError:
 		evt.Error = parseRealtimeDuplexError(payload)
 		return evt, evt.Error

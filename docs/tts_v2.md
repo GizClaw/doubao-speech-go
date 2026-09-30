@@ -51,6 +51,15 @@ The upstream fields below are documented for completeness. Fields that are not
 listed in `TTSV2WSConfig` are not yet public SDK API; add typed structs and
 tests before exposing them.
 
+## HTTP Streaming Usage
+
+`TTSV2.Stream` calls the unidirectional HTTP endpoint
+`/api/v3/tts/unidirectional`. It always sends
+`X-Control-Require-Usage-Tokens-Return: text_words`, so the final chunk
+(`IsLast`) carries `Usage.TextWords`: the billed text length, one per Unicode
+character including spaces and punctuation. `Usage` is nil on every other
+chunk and when the provider omits usage.
+
 ## Request Headers
 
 | Header | Required | Meaning |

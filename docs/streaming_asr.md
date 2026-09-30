@@ -439,7 +439,7 @@ Response payload fields:
 | `result.utterances[].words[].start_time` | 4 | int | `ASRV2Word.StartTime` | Word start time in milliseconds. |
 | `result.utterances[].words[].end_time` | 4 | int | `ASRV2Word.EndTime` | Word end time in milliseconds. |
 | `result.utterances[].words[].conf` | 4 | float | `ASRV2Word.Conf` | Word confidence. |
-| `audio_info.duration` | 2 | int | `Duration` | Audio duration in milliseconds. |
+| `audio_info.duration` | 2 | int | `Duration` | Audio duration in milliseconds processed so far. `ASRV2Session.AudioDuration()` keeps the largest value from every response, including responses without text, so after the session finishes it is the billed audio duration. |
 
 Example:
 
