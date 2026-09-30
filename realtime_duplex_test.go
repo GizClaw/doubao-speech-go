@@ -411,3 +411,18 @@ func assertEventType(t *testing.T, payload []byte, want string) {
 		t.Fatalf("event type = %q, want %s; payload=%s", event.Type, want, payload)
 	}
 }
+
+func TestRealtimeDuplexResponseDoneRejectsMalformedUsage(t *testing.T) {
+	evt, err := decodeRealtimeDuplexEvent([]byte(`{"type":"response.done","response":{"usage":{"input_tokens":"2073"}}}`))
+	if err == nil {
+		t.Fatalf("decode malformed usage = %+v, want error", evt)
+	}
+	if evt == nil || evt.Type != RealtimeDuplexEventResponseDone || evt.Usage != nil {
+		t.Fatalf("event = %+v, want response.done without usage", evt)
+	}
+
+	evt, err = decodeRealtimeDuplexEvent([]byte(`{"type":"response.done","response":{}}`))
+	if err != nil || evt.Usage != nil {
+		t.Fatalf("decode response.done without usage = %+v, %v; want nil usage and no error", evt, err)
+	}
+}

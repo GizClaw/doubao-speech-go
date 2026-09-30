@@ -225,7 +225,11 @@ func decodeRealtimeDuplexEvent(payload []byte) (*RealtimeDuplexEvent, error) {
 				Usage *RealtimeDuplexUsage `json:"usage"`
 			} `json:"response"`
 		}
-		_ = json.Unmarshal(payload, &body)
+		// Usage is billing data: a malformed report fails the event instead of
+		// silently under-reporting tokens.
+		if err := json.Unmarshal(payload, &body); err != nil {
+			return evt, wrapError(err, "decode realtime duplex response.done usage")
+		}
 		evt.Usage = body.Response.Usage
 	case RealtimeDuplexEventError:
 		evt.Error = parseRealtimeDuplexError(payload)
