@@ -265,6 +265,35 @@ func TestTTSV2HTTPStreamResourceSpeakerMismatchError(t *testing.T) {
 	}
 }
 
+func TestTTSV2HTTPStreamSubtitleFrames(t *testing.T) {
+	summary := []byte(`{"code":0,"message":"","data":null,"sentence":{"phonemes":[],"text":"甲。乙。","words":[]}}`)
+	chunk, _, _, err := parseTTSV2HTTPStreamLine(summary, responseMetadata{})
+	if err != nil || chunk != nil {
+		t.Fatalf("summary frame without words must be skipped: chunk=%+v err=%v", chunk, err)
+	}
+	line := []byte(`{"code":0,"message":"","data":null,"sentence":{"phonemes":[],"text":"甲。","words":[{"confidence":0.9,"endTime":0.6,"startTime":0.4,"word":"甲。"}]}}`)
+	chunk, last, _, err := parseTTSV2HTTPStreamLine(line, responseMetadata{})
+	if err != nil || last || chunk == nil || chunk.Sentence == nil {
+		t.Fatalf("chunk=%+v last=%v err=%v", chunk, last, err)
+	}
+	if len(chunk.Audio) != 0 || chunk.Sentence.Text != "甲。" || len(chunk.Sentence.Words) != 1 ||
+		chunk.Sentence.Words[0].StartTime != 0.4 || chunk.Sentence.Words[0].EndTime != 0.6 {
+		t.Fatalf("sentence = %+v", chunk.Sentence)
+	}
+	client := NewClient("test-app", WithUserID("tester"))
+	req, err := normalizeTTSV2Request(&TTSV2Request{Text: "hello", Speaker: "speaker", EnableSubtitle: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := client.TTSV2.buildStreamRequestBody(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !body.ReqParams.AudioParams.EnableSubtitle {
+		t.Fatal("enable_subtitle must reach audio_params")
+	}
+}
+
 func TestTTSV2HTTPStreamErrorNestedHeaderMetadata(t *testing.T) {
 	line := []byte(`{"code":55000000,"message":"failed","header":{"request_id":"req-header","trace_id":"trace-header","logid":"log-header"}}`)
 

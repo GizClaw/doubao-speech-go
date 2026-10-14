@@ -49,6 +49,10 @@ type TTSV2Request struct {
 	// Deprecated: Use ExplicitLanguage, which takes precedence when both are set.
 	Language string `json:"language,omitempty" yaml:"language,omitempty"`
 
+	// EnableSubtitle sets audio_params.enable_subtitle. The stream then carries
+	// one TTSV2Chunk.Sentence per synthesized sentence with word timestamps.
+	EnableSubtitle bool `json:"enable_subtitle,omitempty" yaml:"enable_subtitle,omitempty"`
+
 	ResourceID string           `json:"resource_id,omitempty" yaml:"resource_id,omitempty"`
 	MixSpeaker *TTSV2MixSpeaker `json:"mix_speaker,omitempty" yaml:"mix_speaker,omitempty"`
 }
@@ -76,6 +80,25 @@ type TTSV2Chunk struct {
 	// Usage is the provider-billed usage. Only the final chunk carries it,
 	// and only when the provider reports it.
 	Usage *TTSV2Usage `json:"usage,omitempty"`
+	// Sentence is set on subtitle frames when the request enabled subtitles.
+	// Such frames carry no audio.
+	Sentence *TTSV2Sentence `json:"sentence,omitempty"`
+}
+
+// TTSV2Sentence is one synthesized sentence with word timestamps in seconds
+// from the start of the request's audio.
+type TTSV2Sentence struct {
+	Text  string      `json:"text"`
+	Words []TTSV2Word `json:"words"`
+}
+
+// TTSV2Word is one timed word (Chinese: usually one character, with any
+// trailing punctuation attached).
+type TTSV2Word struct {
+	Word       string  `json:"word"`
+	StartTime  float64 `json:"startTime"`
+	EndTime    float64 `json:"endTime"`
+	Confidence float64 `json:"confidence"`
 }
 
 // TTSV2Usage is the usage the provider bills for one synthesis request.
@@ -174,6 +197,8 @@ func (s *TTSServiceV2) buildStreamRequestBody(req *TTSV2Request) (ttsV2HTTPStrea
 				PitchRate:  req.PitchRate,
 				VolumeRate: req.VolumeRate,
 				Emotion:    req.Emotion,
+
+				EnableSubtitle: req.EnableSubtitle,
 			},
 			MixSpeaker: req.MixSpeaker,
 			Additions:  additions,
@@ -308,18 +333,24 @@ func parseTTSV2HTTPStreamLine(line []byte, baseMeta responseMetadata) (*TTSV2Chu
 	}
 
 	isLast := payload.Done || payload.Code == ttsV2CodeStreamDone
-	if !hasAudio && !isLast {
+	sentence := payload.Sentence
+	if sentence != nil && len(sentence.Words) == 0 {
+		// The service also sends a whole-request summary frame without words.
+		sentence = nil
+	}
+	if !hasAudio && !isLast && sentence == nil {
 		return nil, false, meta, nil
 	}
 
 	chunk := &TTSV2Chunk{
-		Audio:   audio,
-		IsLast:  isLast,
-		ReqID:   meta.ReqID,
-		TraceID: meta.TraceID,
-		LogID:   meta.LogID,
-		Code:    payload.Code,
-		Message: payload.Message,
+		Audio:    audio,
+		IsLast:   isLast,
+		ReqID:    meta.ReqID,
+		TraceID:  meta.TraceID,
+		LogID:    meta.LogID,
+		Code:     payload.Code,
+		Message:  payload.Message,
+		Sentence: sentence,
 	}
 	if isLast {
 		chunk.Usage = payload.Usage
@@ -377,12 +408,15 @@ type ttsV2AudioParams struct {
 	PitchRate  int    `json:"pitch_rate,omitempty"`
 	VolumeRate int    `json:"volume_rate,omitempty"`
 	Emotion    string `json:"emotion,omitempty"`
+
+	EnableSubtitle bool `json:"enable_subtitle,omitempty"`
 }
 
 type ttsV2HTTPStreamLine struct {
-	Code    int             `json:"code"`
-	Message string          `json:"message"`
-	Done    bool            `json:"done"`
-	Data    json.RawMessage `json:"data"`
-	Usage   *TTSV2Usage     `json:"usage"`
+	Code     int             `json:"code"`
+	Message  string          `json:"message"`
+	Done     bool            `json:"done"`
+	Data     json.RawMessage `json:"data"`
+	Sentence *TTSV2Sentence  `json:"sentence"`
+	Usage    *TTSV2Usage     `json:"usage"`
 }
