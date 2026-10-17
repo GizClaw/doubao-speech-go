@@ -101,6 +101,15 @@ func TestASRBlockedSendHonorsCancellationAndClose(t *testing.T) {
 				t.Fatalf("send error=%v", err)
 			}
 			awaitBlockedASR(t, conn.closed)
+			if !session.isClosed() {
+				t.Fatal("canceled transport left the session reusable")
+			}
+			if err := session.SendAudio(t.Context(), []byte{3, 4}, false); err == nil {
+				t.Fatal("fresh send reused the invalid session")
+			}
+			if writes := conn.writes.Load(); writes != 2 {
+				t.Fatalf("fresh send reached closed transport: writes=%d", writes)
+			}
 		})
 	}
 }

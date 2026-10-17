@@ -100,6 +100,7 @@ func (s *ASRServiceV2) OpenStreamSession(ctx context.Context, cfg *ASRV2Config) 
 // SendAudio sends one audio chunk.
 //
 // isLast=true marks the last frame (flags=2).
+// Cancellation during a write closes and invalidates the session.
 func (s *ASRV2Session) SendAudio(ctx context.Context, audio []byte, isLast bool) error {
 	if len(audio) == 0 && !isLast {
 		return newAPIError(CodeParamError, "audio payload is empty")
@@ -345,7 +346,7 @@ func (s *ASRV2Session) writeBinary(ctx context.Context, packet []byte) error {
 	}
 	// Transport Close is safe concurrently with a Gorilla write and must not
 	// wait for writeMu. A canceled write leaves the WebSocket unusable.
-	stop := context.AfterFunc(ctx, func() { _ = s.conn.Close() })
+	stop := context.AfterFunc(ctx, func() { _ = s.Close() })
 	defer stop()
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
