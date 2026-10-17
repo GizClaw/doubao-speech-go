@@ -127,7 +127,7 @@ Handshake request example:
 GET /api/v3/sauc/bigmodel_async
 Host: openspeech.bytedance.com
 X-Api-Key: <api-key>
-X-Api-Resource-Id: volc.bigasr.sauc.duration
+X-Api-Resource-Id: volc.seedasr.sauc.duration
 X-Api-Connect-Id: <uuid>
 ```
 
@@ -594,7 +594,9 @@ DOUBAO_API_KEY=<your_api_key> \
 go run ./examples/asr_v2_sauc_ws -mode ptt
 ```
 
-The example sends 100 ms packets at real-time cadence while receiving results.
+The example and ASR live test default to ASR 2.0
+(`volc.seedasr.sauc.duration`). The example sends 100 ms packets at real-time
+cadence while receiving results.
 PTT sends an audio EOS and waits for the final server packet. Continuous mode
 repeats the input in one WebSocket session, streams silence after each copy,
 and requires a definite utterance from each copy before sending audio EOS:

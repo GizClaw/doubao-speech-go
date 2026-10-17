@@ -50,7 +50,7 @@ func TestASRV2EndpointingParametersReduceShortUtteranceLatency(t *testing.T) {
 	}
 	resourceID := firstEnv("DOUBAO_ASR_RESOURCE_ID")
 	if resourceID == "" {
-		resourceID = doubaospeech.ResourceASRStream
+		resourceID = doubaospeech.ResourceASRStreamV2
 	}
 
 	audio, err := os.ReadFile(asrV2AudioPath)

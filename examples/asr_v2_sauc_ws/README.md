@@ -28,10 +28,10 @@ go run ./examples/asr_v2_sauc_ws \
 
 ## Resource IDs
 
-- ASR 1.0 duration: `volc.bigasr.sauc.duration`
-- ASR 1.0 concurrent: `volc.bigasr.sauc.concurrent`
 - ASR 2.0 duration: `volc.seedasr.sauc.duration`
 - ASR 2.0 concurrent: `volc.seedasr.sauc.concurrent`
+- ASR 1.0 duration: `volc.bigasr.sauc.duration`
+- ASR 1.0 concurrent: `volc.bigasr.sauc.concurrent`
 
 The default is `volc.seedasr.sauc.duration`. The API key must be granted for
 the selected resource. `DOUBAO_APP_ID` is an App ID config value, not an
@@ -58,7 +58,7 @@ The official guidance is to send 100-200 ms packets at 100-200 ms intervals.
 
 ```bash
 go run ./examples/asr_v2_sauc_ws -mode ptt \
-  -resource-id volc.bigasr.sauc.duration -expect 今天天气不错
+  -resource-id volc.seedasr.sauc.duration -expect 今天天气不错
 ```
 
 PTT sends one copy of the input, followed by an empty final audio marker. It
@@ -72,12 +72,14 @@ continuous mode checks it separately in each copy's finalized utterances.
 
 ```bash
 go run ./examples/asr_v2_sauc_ws -mode continuous -turns 2 \
-  -resource-id volc.bigasr.sauc.duration -expect 今天天气不错
+  -resource-id volc.seedasr.sauc.duration -expect 今天天气不错
 ```
 
 Continuous mode sends multiple copies of the input in one session, with
 `-silence=2s` after each copy. It requires a non-empty `definite` utterance
-whose start and end times fall within each copy before any audio EOS is sent.
+whose end time falls within each copy before any audio EOS is sent. VAD may
+include pre-roll from the preceding silence; it must not include speech from
+another copy.
 Each copy must independently contain `-expect`, when supplied; repeated matches
 in another copy cannot satisfy it. Only after
 every copy has passed this check does it send the final marker and drain the

@@ -24,9 +24,10 @@ type sendResult struct {
 }
 
 type copyTranscript struct {
-	startMS int64
-	endMS   int64
-	text    string
+	startMS    int64
+	endMS      int64
+	minStartMS int64
+	text       string
 }
 
 type continuousProgress struct {
@@ -34,11 +35,17 @@ type continuousProgress struct {
 	copies []copyTranscript
 }
 
-func newContinuousProgress(turns int, duration time.Duration) *continuousProgress {
+func newContinuousProgress(turns int, duration, silence time.Duration) *continuousProgress {
 	p := &continuousProgress{copies: make([]copyTranscript, turns)}
 	for i := range turns {
 		p.copies[i].startMS = (time.Duration(i) * duration).Milliseconds()
 		p.copies[i].endMS = (time.Duration(i+1) * duration).Milliseconds()
+		p.copies[i].minStartMS = p.copies[i].startMS
+		if i > 0 {
+			// VAD may include pre-roll from the preceding silence, but an
+			// utterance must not include speech from the preceding copy.
+			p.copies[i].minStartMS = (time.Duration(i)*duration - silence).Milliseconds()
+		}
 	}
 	return p
 }
@@ -48,7 +55,7 @@ func (p *continuousProgress) record(utterance doubaospeech.ASRV2Utterance) {
 	defer p.mu.Unlock()
 	for i := range p.copies {
 		copy := &p.copies[i]
-		if int64(utterance.StartTime) >= copy.startMS && int64(utterance.EndTime) <= copy.endMS {
+		if int64(utterance.StartTime) >= copy.minStartMS && int64(utterance.EndTime) > copy.startMS && int64(utterance.EndTime) <= copy.endMS {
 			copy.text += utterance.Text
 			return
 		}
@@ -80,7 +87,7 @@ func run() error {
 	sampleRate := flag.Int("sample-rate", 16000, "PCM sample rate (16000)")
 	format := flag.String("format", "pcm", "Audio format (pcm)")
 	chunkSize := flag.Int("chunk-size", 3200, "Bytes per paced audio packet")
-	resourceID := flag.String("resource-id", doubaospeech.ResourceASRStreamV2, "ASR resource ID")
+	resourceID := flag.String("resource-id", doubaospeech.ResourceASRStreamV2, "ASR resource ID (defaults to ASR 2.0 duration)")
 	mode := flag.String("mode", "ptt", "ptt: finalize after audio; continuous: require utterance boundaries before audio EOS")
 	turns := flag.Int("turns", 2, "Number of copies of the input in one continuous session")
 	silence := flag.Duration("silence", 2*time.Second, "Silence after each continuous input copy")
@@ -150,7 +157,7 @@ func run() error {
 
 	quiet := make([]byte, int(*silence*32000/time.Second)/2*2)
 	copyDuration := time.Duration(len(audio)+len(quiet)) * time.Second / 32000
-	progress := newContinuousProgress(*turns, copyDuration)
+	progress := newContinuousProgress(*turns, copyDuration, time.Duration(len(quiet))*time.Second/32000)
 	sent := make(chan sendResult, 1)
 	go func() {
 		report := sendInput(ctx, session, audio, quiet, *chunkSize, *mode, *turns, *expect, progress)
