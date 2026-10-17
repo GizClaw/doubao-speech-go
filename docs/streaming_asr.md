@@ -10,9 +10,14 @@ streaming-input/non-streaming-result, and an optimized bidirectional endpoint.
 
 | Mode | Endpoint | Upstream behavior | SDK coverage |
 | --- | --- | --- | --- |
-| Bidirectional streaming | `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel` | One response per input packet; returns recognized characters as soon as possible. | Implemented by `ASRV2.OpenStreamSession`. |
+| Bidirectional streaming | `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel` | One response per input packet; returns recognized characters as soon as possible. | Not selected by the SDK. |
 | Streaming input / no-stream result | `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_nostream` | Returns recognition after input audio exceeds 15 seconds or after the final negative packet; higher accuracy. | Documented only; no dedicated SDK method yet. |
-| Optimized bidirectional streaming | `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async` | Returns a new packet only when the result changes; upstream recommends this for better RTF and first/last-character latency. | Documented only; no dedicated SDK method yet. |
+| Optimized bidirectional streaming | `wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async` | Returns a new packet only when the result changes; upstream recommends this for better RTF and first/last-character latency. | Used by `ASRV2.OpenStreamSession`. |
+
+`ASRV2.OpenStreamSession` always uses the optimized endpoint. The public session
+API is the same for continuous input and push-to-talk. The SDK explicitly sends
+`enable_nonstream=false` when `Request.EnableNonstream` is omitted; callers can
+still explicitly enable second-pass recognition through the existing field.
 
 Packet guidance from upstream:
 
@@ -38,7 +43,7 @@ retains its maximum two-second wait for the receiver to finish.
 The SDK supports:
 
 - API-key authentication headers plus request metadata headers
-- `bigmodel` endpoint connection
+- `bigmodel_async` endpoint connection
 - full-client JSON start frame
 - audio-only request frames
 - final negative audio packet through `SendAudio(ctx, audio, true)`
@@ -70,13 +75,18 @@ Typed SDK request fields:
 Every documented BigASR request parameter below is represented by
 `ASRV2RequestConfig`; the SDK does not expose an arbitrary request passthrough
 map. Optional scalar fields use pointers so callers can distinguish omission
-from an explicit `false` or `0`.
+from an explicit `false` or `0`. `EnableNonstream` defaults to an explicit
+`false` on the wire.
 
 For example, configure forced endpointing without using an untyped request map:
 
+Continuous applications that need definite results for short utterances should
+set both endpointing fields. Without them, provider defaults may defer
+endpointing until ten seconds of audio, even while interim text is returned.
+
 ```go
 endWindowSize := 200
-forceToSpeechTime := 0
+forceToSpeechTime := 1000
 
 config := &doubaospeech.ASRV2Config{
     Format:     doubaospeech.FormatPCM,
@@ -114,10 +124,10 @@ Resource IDs:
 Handshake request example:
 
 ```http
-GET /api/v3/sauc/bigmodel
+GET /api/v3/sauc/bigmodel_async
 Host: openspeech.bytedance.com
 X-Api-Key: <api-key>
-X-Api-Resource-Id: volc.bigasr.sauc.duration
+X-Api-Resource-Id: volc.seedasr.sauc.duration
 X-Api-Connect-Id: <uuid>
 ```
 
@@ -230,7 +240,7 @@ Request fields:
 | Field | Type | SDK field | Notes |
 | --- | --- | --- | --- |
 | `model_name` | string | `Request.ModelName` | Upstream currently uses `bigmodel`. |
-| `enable_nonstream` | bool | `Request.EnableNonstream` | Streaming plus non-streaming second-pass recognition; only supported by optimized bidirectional mode. Enables VAD segmentation and outputs `definite: true` only from nostream recognition. |
+| `enable_nonstream` | bool | `Request.EnableNonstream` | Defaults to explicit `false`. When `true`, adds non-streaming second-pass recognition after VAD segmentation. With it disabled, forced endpointing can still return `definite: true` utterances. |
 | `enable_itn` | bool | `Request.EnableITN` | Defaults to true upstream. Converts spoken text to written form, such as dates and currency. |
 | `enable_speaker_info` | bool | `Request.EnableSpeakerInfo` | Speaker clustering; requires empty/default Chinese language or `zh-CN`. For async mode, `enable_nonstream` must be true. Requires `ssd_version="200"`. |
 | `ssd_version` | string | `Request.SSDVersion` | `200` enables big-model SSD. Recommended with ASR 2.0, not recommended with ASR 1.0. |
@@ -478,6 +488,12 @@ Example:
 }
 ```
 
+`ASRV2Result.IsFinal` is true for a definite utterance or the final server
+packet. A definite utterance does not end a continuous session. Keep consuming
+`Recv()` until it ends after the final server packet; this also retains a final
+packet's billed audio duration when the packet has no text. Send the final
+audio marker only when the input session is complete.
+
 ## Error Frame
 
 When the server cannot resolve a binary or transport protocol problem, it sends
@@ -575,8 +591,23 @@ Run the SDK example:
 ```bash
 DOUBAO_APP_ID=<your_app_id> \
 DOUBAO_API_KEY=<your_api_key> \
-go run ./examples/asr_v2_sauc_ws
+go run ./examples/asr_v2_sauc_ws -mode ptt
 ```
+
+The example and ASR live test default to ASR 2.0
+(`volc.seedasr.sauc.duration`). The example sends 100 ms packets at real-time
+cadence while receiving results.
+PTT sends an audio EOS and waits for the final server packet. Continuous mode
+repeats the input in one WebSocket session, streams silence after each copy,
+and requires a definite utterance from each copy before sending audio EOS:
+
+```bash
+go run ./examples/asr_v2_sauc_ws -mode continuous -turns 2
+```
+
+Both modes explicitly disable second-pass recognition. See the
+[example options](../examples/asr_v2_sauc_ws/README.md) for resource selection
+and transcript checks.
 
 Run the credential-backed VAD E2E test explicitly:
 
@@ -587,8 +618,9 @@ go test ./tests/e2e -run TestASRV2EndpointingParametersReduceShortUtteranceLaten
 ```
 
 The live test sends the same short PCM utterance twice in real-time-sized
-chunks. The baseline leaves endpointing parameters unset; the tuned trial sets
-`end_window_size=200` and `force_to_speech_time=0`. Both trials stream silence
+chunks. Both trials set `force_to_speech_time=1000`; the baseline uses an
+800 ms endpointing window and the tuned trial uses `end_window_size=200`.
+Both trials stream silence
 without an audio EOS and require a non-empty `definite` transcript. The tuned
 trial must save at least 250 ms, proving that the typed endpointing parameters
 reduce the provider-side short-utterance finalization delay rather than merely

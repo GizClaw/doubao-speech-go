@@ -24,12 +24,14 @@ const (
 	asrV2ShortUtteranceStart  = 960 * time.Millisecond
 	asrV2ShortUtteranceEnd    = 3210 * time.Millisecond
 	asrV2VADDeadline          = 5 * time.Second
+	asrV2BaselineEndWindow    = 800
 	asrV2TunedEndWindowSize   = 200
 	asrV2MinimumLatencySaving = 250 * time.Millisecond
 )
 
 // TestASRV2EndpointingParametersReduceShortUtteranceLatency compares the same
-// short utterance with the provider defaults and a shorter endpointing window.
+// short utterance with 800 ms and 200 ms endpointing windows. Both trials
+// explicitly enable endpointing after the first second of audio.
 // Neither trial sends a final audio packet before BigASR emits a definite
 // utterance. It is opt-in because it uses paid credentials.
 func TestASRV2EndpointingParametersReduceShortUtteranceLatency(t *testing.T) {
@@ -48,7 +50,7 @@ func TestASRV2EndpointingParametersReduceShortUtteranceLatency(t *testing.T) {
 	}
 	resourceID := firstEnv("DOUBAO_ASR_RESOURCE_ID")
 	if resourceID == "" {
-		resourceID = doubaospeech.ResourceASRStream
+		resourceID = doubaospeech.ResourceASRStreamV2
 	}
 
 	audio, err := os.ReadFile(asrV2AudioPath)
@@ -64,6 +66,8 @@ func TestASRV2EndpointingParametersReduceShortUtteranceLatency(t *testing.T) {
 	defer cancel()
 
 	falseValue := false
+	forceToSpeechTime := 1000
+	baselineWindow := asrV2BaselineEndWindow
 	client := doubaospeech.NewClient(
 		appID,
 		doubaospeech.WithAPIKey(apiKey),
@@ -71,12 +75,13 @@ func TestASRV2EndpointingParametersReduceShortUtteranceLatency(t *testing.T) {
 		doubaospeech.WithUserID("asr-v2-e2e"),
 	)
 	baseline := runASRV2VADTrial(t, ctx, client, audio, &doubaospeech.ASRV2RequestConfig{
-		EnableITN:  &falseValue,
-		EnablePunc: &falseValue,
-		ResultType: "full",
+		EnableITN:         &falseValue,
+		EnablePunc:        &falseValue,
+		ResultType:        "full",
+		EndWindowSize:     &baselineWindow,
+		ForceToSpeechTime: &forceToSpeechTime,
 	})
 
-	forceToSpeechTime := 0
 	endWindowSize := asrV2TunedEndWindowSize
 	tuned := runASRV2VADTrial(t, ctx, client, audio, &doubaospeech.ASRV2RequestConfig{
 		EnableITN:         &falseValue,
@@ -88,7 +93,7 @@ func TestASRV2EndpointingParametersReduceShortUtteranceLatency(t *testing.T) {
 
 	saving := baseline.latency - tuned.latency
 	t.Logf(
-		"BigASR short-utterance VAD latency: default=%s tuned=%s saving=%s default_text=%q tuned_text=%q resource=%s",
+		"BigASR short-utterance VAD latency: baseline_800ms=%s tuned_200ms=%s saving=%s baseline_text=%q tuned_text=%q resource=%s",
 		baseline.latency,
 		tuned.latency,
 		saving,
@@ -101,7 +106,7 @@ func TestASRV2EndpointingParametersReduceShortUtteranceLatency(t *testing.T) {
 	}
 	if saving < asrV2MinimumLatencySaving {
 		t.Fatalf(
-			"BigASR end_window_size=%d saved %s, want at least %s over provider defaults",
+			"BigASR end_window_size=%d saved %s, want at least %s over an 800 ms window",
 			asrV2TunedEndWindowSize,
 			saving,
 			asrV2MinimumLatencySaving,
