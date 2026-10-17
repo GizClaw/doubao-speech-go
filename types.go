@@ -95,7 +95,7 @@ type ASRV2UserConfig struct {
 // Pointer scalars distinguish an omitted field from an explicit false or zero.
 type ASRV2RequestConfig struct {
 	ModelName              string `json:"model_name,omitempty" yaml:"model_name,omitempty"`
-	EnableNonstream        *bool  `json:"enable_nonstream,omitempty" yaml:"enable_nonstream,omitempty"`
+	EnableNonstream        *bool  `json:"enable_nonstream,omitempty" yaml:"enable_nonstream,omitempty"` // Defaults to explicit false.
 	EnableITN              *bool  `json:"enable_itn,omitempty" yaml:"enable_itn,omitempty"`
 	EnableSpeakerInfo      *bool  `json:"enable_speaker_info,omitempty" yaml:"enable_speaker_info,omitempty"`
 	SSDVersion             string `json:"ssd_version,omitempty" yaml:"ssd_version,omitempty"`

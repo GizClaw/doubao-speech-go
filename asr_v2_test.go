@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"iter"
 	"net/http"
@@ -119,6 +120,10 @@ func TestOpenStreamSessionSendsStartFrame(t *testing.T) {
 	}
 	defer session.Close()
 
+	if want := "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async"; dialer.url != want {
+		t.Fatalf("WebSocket URL = %q, want %q", dialer.url, want)
+	}
+
 	writes := conn.writesSnapshot()
 	if len(writes) == 0 {
 		t.Fatalf("no writes sent")
@@ -150,6 +155,9 @@ func TestOpenStreamSessionSendsStartFrame(t *testing.T) {
 	}
 	if body.Request.ShowUtterances == nil || !*body.Request.ShowUtterances {
 		t.Fatalf("request.show_utterances = %v, want true by default", body.Request.ShowUtterances)
+	}
+	if body.Request.EnableNonstream == nil || *body.Request.EnableNonstream {
+		t.Fatalf("request.enable_nonstream = %v, want explicit false by default", body.Request.EnableNonstream)
 	}
 	if got := dialer.headers.Get("X-Api-Resource-Id"); got != ResourceASRStreamV2 {
 		t.Fatalf("X-Api-Resource-Id = %q, want %q", got, ResourceASRStreamV2)
@@ -459,7 +467,7 @@ func TestRecvResultAndError(t *testing.T) {
 	defer session.Close()
 
 	resultPayload := []byte(`{"reqid":"r1","trace_id":"trace-r1","audio_info":{"duration":1200},"result":{"text":"hello","utterances":[{"text":"hello","start_time":0,"end_time":1000,"definite":true}]}}`)
-	conn.enqueue(websocket.BinaryMessage, buildServerFrame(protocol.MessageTypeFullServer, protocol.FlagNegativeWithSeq, resultPayload))
+	conn.enqueue(websocket.BinaryMessage, buildServerFrame(protocol.MessageTypeFullServer, protocol.FlagPositiveSequence, resultPayload))
 
 	var gotResult *ASRV2Result
 	for result, err := range session.Recv() {
@@ -505,6 +513,60 @@ func TestRecvResultAndError(t *testing.T) {
 	}
 	if apiErr.ConnectID != session.reqID {
 		t.Fatalf("connect_id = %q, want %q", apiErr.ConnectID, session.reqID)
+	}
+}
+
+func TestASRV2RecvEndsOnlyAfterFinalServerPacket(t *testing.T) {
+	for _, flag := range []protocol.MessageFlags{protocol.FlagNegativeSequence, protocol.FlagNegativeWithSeq} {
+		for _, text := range []string{"world", ""} {
+			t.Run(fmt.Sprintf("flag=%d/text=%s", flag, text), func(t *testing.T) {
+				client := NewClient("test-app", WithAPIKey("key-test"))
+				conn := newFakeWSConn()
+				svc := newASRServiceV2(client)
+				svc.dialer = &fakeDialer{conn: conn}
+				session, err := svc.OpenStreamSession(context.Background(), &ASRV2Config{})
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer session.Close()
+
+				first := []byte(`{"result":{"text":"hello","utterances":[{"text":"hello","definite":true}]}}`)
+				conn.enqueue(websocket.BinaryMessage, buildServerFrame(protocol.MessageTypeFullServer, protocol.FlagPositiveSequence, first))
+				last := fmt.Appendf(nil, `{"audio_info":{"duration":3400},"result":{"text":%q}}`, text)
+				conn.enqueue(websocket.BinaryMessage, buildServerFrame(protocol.MessageTypeFullServer, flag, last))
+
+				done := make(chan []*ASRV2Result, 1)
+				go func() {
+					var results []*ASRV2Result
+					for result, err := range session.Recv() {
+						if err != nil {
+							t.Errorf("Recv error = %v", err)
+							break
+						}
+						results = append(results, result)
+					}
+					done <- results
+				}()
+				select {
+				case results := <-done:
+					want := 1
+					if text != "" {
+						want = 2
+					}
+					if len(results) != want || results[0].Text != "hello" || !results[0].IsFinal {
+						t.Fatalf("results = %+v, want definite hello followed by %q", results, text)
+					}
+					if text != "" && (results[1].Text != text || !results[1].IsFinal) {
+						t.Fatalf("last result = %+v, want final %q", results[1], text)
+					}
+					if session.AudioDuration() != 3400*time.Millisecond {
+						t.Fatalf("AudioDuration = %s, want 3.4s", session.AudioDuration())
+					}
+				case <-time.After(2 * time.Second):
+					t.Fatal("Recv did not end after the final server packet")
+				}
+			})
+		}
 	}
 }
 

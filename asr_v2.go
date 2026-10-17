@@ -20,7 +20,7 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// ASRServiceV2 provides SAUC WebSocket streaming recognition.
+// ASRServiceV2 provides optimized SAUC WebSocket streaming recognition.
 type ASRServiceV2 struct {
 	client *Client
 	dialer transport.WSDialer
@@ -68,7 +68,7 @@ func (s *ASRServiceV2) OpenStreamSession(ctx context.Context, cfg *ASRV2Config) 
 	resourceID := s.client.resolveResourceID(normalized.ResourceID, ResourceASRStreamV2)
 	connectID := util.NewReqID("asr")
 
-	endpoint := strings.TrimRight(s.client.config.wsURL, "/") + "/api/v3/sauc/bigmodel"
+	endpoint := strings.TrimRight(s.client.config.wsURL, "/") + "/api/v3/sauc/bigmodel_async"
 	headers := auth.BuildV2WSHeaders(s.client.authCredentials(), resourceID, connectID)
 
 	conn, resp, err := s.dialer.DialContext(ctx, endpoint, headers)
@@ -117,7 +117,8 @@ func (s *ASRV2Session) SendAudio(ctx context.Context, audio []byte, isLast bool)
 	return s.writeBinary(ctx, packet)
 }
 
-// Recv yields recognition results as a stream.
+// Recv yields recognition results until the final server packet or an error.
+// A definite utterance does not end the session or this iterator.
 func (s *ASRV2Session) Recv() iter.Seq2[*ASRV2Result, error] {
 	return func(yield func(*ASRV2Result, error) bool) {
 		results := s.resultCh
@@ -407,6 +408,7 @@ func (s *ASRV2Session) receiveLoop() {
 
 			switch frame.MessageType {
 			case protocol.MessageTypeFullServer:
+				isLast := frame.Flags == protocol.FlagNegativeSequence || frame.Flags == protocol.FlagNegativeWithSeq
 				result, durationMS, err := decodeASRV2Result(frame, s.reqID)
 				if int64(durationMS) > s.audioDurationMS.Load() {
 					s.audioDurationMS.Store(int64(durationMS))
@@ -416,11 +418,17 @@ func (s *ASRV2Session) receiveLoop() {
 					continue
 				}
 				if result == nil {
+					if isLast {
+						return
+					}
 					continue
 				}
 				select {
 				case s.resultCh <- result:
 				case <-s.closed:
+					return
+				}
+				if isLast {
 					return
 				}
 			case protocol.MessageTypeError:
@@ -634,6 +642,10 @@ func resolvedASRV2RequestConfig(cfg ASRV2Config) ASRV2RequestConfig {
 	request := ASRV2RequestConfig{}
 	if cfg.Request != nil {
 		request = *cfg.Request
+	}
+	if request.EnableNonstream == nil {
+		value := false
+		request.EnableNonstream = &value
 	}
 	if request.EnableITN == nil && cfg.EnableITN {
 		value := true

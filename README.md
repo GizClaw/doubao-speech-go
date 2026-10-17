@@ -64,9 +64,8 @@ status by interface:
 
 | Mark | API | Endpoint | SDK surface | Notes |
 | --- | --- | --- | --- | --- |
-| 🟢 | Streaming ASR bidirectional | [Streaming ASR](docs/streaming_asr.md) | `client.ASRV2.OpenStreamSession` | Streams audio-only frames, exposes the complete typed BigASR request configuration, and parses full-server JSON results. |
+| 🟢 | Streaming ASR optimized bidirectional | [Streaming ASR](docs/streaming_asr.md) | `client.ASRV2.OpenStreamSession` | Uses `bigmodel_async`, defaults to `enable_nonstream=false`, exposes typed BigASR request configuration, and receives through the final server packet. |
 | ⚪ | Streaming ASR input-only result | [Streaming ASR](docs/streaming_asr.md) | none | Needs endpoint selection, final-packet behavior, and typed nostream options. |
-| ⚪ | Streaming ASR optimized bidirectional | [Streaming ASR](docs/streaming_asr.md) | none | Needs endpoint selection and typed async/nonstream option coverage. |
 | 🟡 | TTS WebSocket bidirectional | [TTS v2](docs/tts_v2.md) | `client.TTSV2.OpenStreamSession` | Lifecycle, text request, cancel, reuse, and audio chunks are implemented. Current config types cover `speaker`, `format`, `sample_rate`, and `resource_id`; advanced 2.0 fields still need typed options. |
 | ⚪ | TTS WebSocket unidirectional stream | [TTS v1](docs/tts_v1.md) | none | Listed in upstream TTS API inventory. |
 | 🟢 | TTS HTTP Chunked stream | [TTS v1](docs/tts_v1.md) | `client.TTSV2.Stream` | Streams HTTP response frames and decodes audio chunks. |
@@ -81,7 +80,7 @@ status by interface:
 
 Near-term work:
 
-- [ ] Add typed ASR mode selection for `bigmodel_nostream` and `bigmodel_async`.
+- [ ] Add typed ASR mode selection for `bigmodel_nostream`.
 - [ ] Expand typed TTS WebSocket 2.0 options for subtitle, usage, cache, AIGC metadata, explicit language/dialect, `context_texts`, `section_id`, and tag parsing.
 - [ ] Add TTS WebSocket unidirectional and HTTP SSE helpers.
 - [ ] Add typed Voice Clone v3 client for `POST /api/v3/tts/voice_clone`.
