@@ -27,6 +27,14 @@ Packet guidance from upstream:
 
 Implemented by `ASRV2.OpenStreamSession`.
 
+The opening context and each `SendAudio` context cancel in-flight WebSocket
+writes, including a write waiting behind another writer. Cancellation closes
+the transport, so the affected session cannot be reused. `Close` aborts the
+transport directly, unblocks reads and writes, and is idempotent; it does not
+write a graceful finish frame. To finish recognition, send the final audio
+packet with `SendAudio(ctx, audio, true)`, consume `Recv`, then close. `Close`
+retains its maximum two-second wait for the receiver to finish.
+
 The SDK supports:
 
 - API-key authentication headers plus request metadata headers
