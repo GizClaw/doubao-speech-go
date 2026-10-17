@@ -66,7 +66,7 @@ continues receiving after sentence-level `IsFinal` results until the final
 server packet ends `Recv()`. A successful run requires a non-empty final
 transcript after audio EOS and provider audio duration within one packet of
 the sent duration. `-expect` optionally requires a substring in that transcript;
-continuous mode requires it at least once per input copy.
+continuous mode checks it separately in each copy's finalized utterances.
 
 ## Continuous Utterance Boundaries
 
@@ -77,7 +77,9 @@ go run ./examples/asr_v2_sauc_ws -mode continuous -turns 2 \
 
 Continuous mode sends multiple copies of the input in one session, with
 `-silence=2s` after each copy. It requires a non-empty `definite` utterance
-whose end time falls in each copy before any audio EOS is sent. Only after
+whose start and end times fall within each copy before any audio EOS is sent.
+Each copy must independently contain `-expect`, when supplied; repeated matches
+in another copy cannot satisfy it. Only after
 every copy has passed this check does it send the final marker and drain the
 session. It prints each unique utterance's text and time range, then a `PASS`
 summary with the full transcript, finalization latency, and audio duration.

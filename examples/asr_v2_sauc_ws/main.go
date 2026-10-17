@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"sync/atomic"
+	"sync"
 	"time"
 
 	doubaospeech "github.com/GizClaw/doubao-speech-go"
@@ -21,6 +21,51 @@ type sendResult struct {
 	duration time.Duration
 	eosAt    time.Time
 	err      error
+}
+
+type copyTranscript struct {
+	startMS int64
+	endMS   int64
+	text    string
+}
+
+type continuousProgress struct {
+	mu     sync.Mutex
+	copies []copyTranscript
+}
+
+func newContinuousProgress(turns int, duration time.Duration) *continuousProgress {
+	p := &continuousProgress{copies: make([]copyTranscript, turns)}
+	for i := range turns {
+		p.copies[i].startMS = (time.Duration(i) * duration).Milliseconds()
+		p.copies[i].endMS = (time.Duration(i+1) * duration).Milliseconds()
+	}
+	return p
+}
+
+func (p *continuousProgress) record(utterance doubaospeech.ASRV2Utterance) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for i := range p.copies {
+		copy := &p.copies[i]
+		if int64(utterance.StartTime) >= copy.startMS && int64(utterance.EndTime) <= copy.endMS {
+			copy.text += utterance.Text
+			return
+		}
+	}
+}
+
+func (p *continuousProgress) check(turn int, expect string) error {
+	p.mu.Lock()
+	text := p.copies[turn].text
+	p.mu.Unlock()
+	if strings.TrimSpace(text) == "" {
+		return fmt.Errorf("continuous input %d did not produce a definite utterance before audio EOS", turn+1)
+	}
+	if expect != "" && !strings.Contains(text, expect) {
+		return fmt.Errorf("continuous input %d transcript %q does not contain %q", turn+1, text, expect)
+	}
+	return nil
 }
 
 func main() {
@@ -103,10 +148,12 @@ func run() error {
 	defer stopClose()
 	fmt.Printf("mode=%s resource=%s endpoint=bigmodel_async enable_nonstream=false\n", *mode, *resourceID)
 
-	var definiteEnd atomic.Int64
+	quiet := make([]byte, int(*silence*32000/time.Second)/2*2)
+	copyDuration := time.Duration(len(audio)+len(quiet)) * time.Second / 32000
+	progress := newContinuousProgress(*turns, copyDuration)
 	sent := make(chan sendResult, 1)
 	go func() {
-		report := sendInput(ctx, session, audio, *chunkSize, *mode, *turns, *silence, &definiteEnd)
+		report := sendInput(ctx, session, audio, quiet, *chunkSize, *mode, *turns, *expect, progress)
 		sent <- report
 		if report.err != nil {
 			_ = session.Close()
@@ -133,9 +180,7 @@ func run() error {
 				continue
 			}
 			seen[key] = struct{}{}
-			if int64(utterance.EndTime) > definiteEnd.Load() {
-				definiteEnd.Store(int64(utterance.EndTime))
-			}
+			progress.record(utterance)
 			fmt.Printf("[definite start=%d end=%d] %s\n", utterance.StartTime, utterance.EndTime, utterance.Text)
 		}
 	}
@@ -174,23 +219,21 @@ func run() error {
 	return nil
 }
 
-func sendInput(ctx context.Context, session *doubaospeech.ASRV2Session, audio []byte, chunkSize int, mode string, turns int, silence time.Duration, definiteEnd *atomic.Int64) sendResult {
+func sendInput(ctx context.Context, session *doubaospeech.ASRV2Session, audio, quiet []byte, chunkSize int, mode string, turns int, expect string, progress *continuousProgress) sendResult {
 	var sent time.Duration
 	if mode == "ptt" {
 		turns = 1
 	}
 	for turn := range turns {
-		start := sent.Milliseconds()
 		if err := sendPCM(ctx, session, audio, chunkSize, &sent); err != nil {
 			return sendResult{err: err}
 		}
 		if mode == "continuous" {
-			quiet := make([]byte, int(silence*32000/time.Second)/2*2)
 			if err := sendPCM(ctx, session, quiet, chunkSize, &sent); err != nil {
 				return sendResult{err: err}
 			}
-			if definiteEnd.Load() <= start {
-				return sendResult{err: fmt.Errorf("continuous input %d did not produce a definite utterance before audio EOS", turn+1)}
+			if err := progress.check(turn, expect); err != nil {
+				return sendResult{err: err}
 			}
 			fmt.Printf("continuous input %d finalized before audio EOS\n", turn+1)
 		}
