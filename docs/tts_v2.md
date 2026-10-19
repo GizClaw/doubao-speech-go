@@ -119,7 +119,7 @@ The SDK sends this as event ID `1` with namespace `BidirectionalTTS`.
 | `bit_rate` | int | no | not typed | range `64000` to `160000` | Audio bitrate in bps. Only applies to `mp3`. |
 | `speech_rate` | int | no | not typed | `0` | Range `[-50,100]`; `100` is 2x, `-50` is 0.5x. |
 | `loudness_rate` | int | no | not typed | `0` | Range `[-50,100]`; `100` is 2x volume, `-50` is 0.5x. |
-| `enable_subtitle` | bool | no | not typed | `false` | Enables word-level timestamps. Only TTS 2.0 supports this; currently only Chinese and English. |
+| `enable_subtitle` | bool | no | `TTSV2Request.EnableSubtitle` (HTTP stream; frames arrive as `TTSV2Chunk.Sentence`) | `false` | Enables word-level timestamps. Only TTS 2.0 supports this; currently only Chinese and English. |
 
 ### Additions
 
